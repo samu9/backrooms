@@ -38,7 +38,8 @@ renderer.info.autoReset = false;
 const scene = new THREE.Scene();
 const fogColor = new THREE.Color(0.62, 0.55, 0.34);
 scene.background = fogColor.clone().multiplyScalar(0.4);
-const camera = new THREE.PerspectiveCamera(num('fov', 66), 1, 0.05, 140);
+const BASE_FOV = num('fov', 66);
+const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.05, 140);
 camera.rotation.order = 'YXZ';
 
 const shared: Shared = {
@@ -71,7 +72,9 @@ window.addEventListener('resize', resize);
 resize();
 
 // ---------- player ----------
-const player = { x: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vz: 0, bob: 0, noclip: false };
+const player = { x: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vz: 0, bob: 0, sprint: 0, fov: 0, noclip: false };
+const WALK = 1.7;
+const RUN = 5.6;
 const EYE = 1.62;
 const R = 0.26;
 
@@ -273,38 +276,71 @@ let statT = 0;
 const fwd = new THREE.Vector3();
 
 function step(dt: number) {
-  // movement
-  const run = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  const speed = player.noclip ? 6 : run ? 3.4 : 1.6;
+  // ---- movement ----
   let ix = 0,
     iz = 0;
   if (keys.has('KeyW') || keys.has('ArrowUp')) iz -= 1;
   if (keys.has('KeyS') || keys.has('ArrowDown')) iz += 1;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) ix -= 1;
   if (keys.has('KeyD') || keys.has('ArrowRight')) ix += 1;
+  const input = ix !== 0 || iz !== 0;
+  // sprint builds up over ~half a second and dies off faster; only really works going forward
+  const wantRun = input && iz <= 0 && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
+  player.sprint += ((wantRun ? 1 : 0) - player.sprint) * (1 - Math.exp(-dt * (wantRun ? 2.6 : 5)));
+  let speed = player.noclip ? 7 : WALK + (RUN - WALK) * player.sprint;
+  if (iz > 0) speed *= 0.65; // backpedalling
+  else if (iz === 0 && ix !== 0) speed *= 0.85; // pure strafe
   const il = Math.hypot(ix, iz) || 1;
   const s = Math.sin(player.yaw),
     c = Math.cos(player.yaw);
-  const tx = ((ix * c + iz * s) / il) * speed;
-  const tz = ((-ix * s + iz * c) / il) * speed;
-  const k = 1 - Math.exp(-dt * 8);
+  const tx = input ? ((ix * c + iz * s) / il) * speed : 0;
+  const tz = input ? ((-ix * s + iz * c) / il) * speed : 0;
+  // quick to start, a little slower to stop: momentum without feeling floaty
+  const k = 1 - Math.exp(-dt * (input ? 9 : 6.5));
   player.vx += (tx - player.vx) * k;
   player.vz += (tz - player.vz) * k;
-  const nx = player.x + player.vx * dt;
-  if (player.noclip || !collides(nx, player.z)) player.x = nx;
-  else player.vx = 0;
-  const nz = player.z + player.vz * dt;
-  if (player.noclip || !collides(player.x, nz)) player.z = nz;
-  else player.vz = 0;
-  const moving = Math.hypot(player.vx, player.vz);
-  player.bob += dt * moving * 1.9;
+  // sub-step so a sprint at a low frame rate can't skip through a 0.5 m wall
+  const dist = Math.hypot(player.vx, player.vz) * dt;
+  const n = Math.max(1, Math.ceil(dist / 0.12));
+  let travelled = 0;
+  for (let i = 0; i < n; i++) {
+    const ox = player.x,
+      oz = player.z;
+    const nx = player.x + (player.vx * dt) / n;
+    if (player.noclip || !collides(nx, player.z)) player.x = nx;
+    else player.vx *= 0.2; // slide along the wall instead of stopping dead
+    const nz = player.z + (player.vz * dt) / n;
+    if (player.noclip || !collides(player.x, nz)) player.z = nz;
+    else player.vz *= 0.2;
+    travelled += Math.hypot(player.x - ox, player.z - oz);
+  }
+  const moving = dt > 0 ? travelled / dt : 0;
 
-  // handheld camcorder: bob while walking, slow drift always
+  // ---- head bob: one cycle per step, strides lengthen when running ----
+  const stride = 0.62 + 0.11 * moving;
+  const before = Math.floor(player.bob);
+  player.bob += travelled / stride;
+  if (Math.floor(player.bob) !== before && moving > 0.4) audio?.playerStep(player.sprint);
+  const amt = Math.min(1, moving / WALK);
+  const ph = player.bob * Math.PI;
+  const bobY = (Math.abs(Math.sin(ph)) - 0.6) * (0.045 + 0.05 * player.sprint) * amt;
+  const bobX = Math.sin(ph) * (0.022 + 0.012 * player.sprint) * amt;
+  // lean into strafes
+  const strafeV = player.vx * c - player.vz * s;
+  // handheld camcorder: slow drift always
   const sway = (f: number, p: number) => Math.sin(time * f + p) * 0.6 + Math.sin(time * f * 2.3 + p * 1.7) * 0.4;
-  const bobY = Math.sin(player.bob * Math.PI * 2) * 0.03 * Math.min(1, moving);
-  const bobX = Math.cos(player.bob * Math.PI) * 0.02 * Math.min(1, moving);
-  camera.position.set(player.x + bobX * c, EYE + bobY, player.z - bobX * s);
-  camera.rotation.set(player.pitch + sway(0.7, 1) * 0.006, player.yaw + sway(0.5, 4) * 0.008, sway(0.6, 2) * 0.006 + bobX * 0.15);
+  camera.position.set(player.x + bobX * c, EYE + bobY - 0.04 * player.sprint, player.z - bobX * s);
+  camera.rotation.set(
+    player.pitch + sway(0.7, 1) * 0.006 - Math.abs(Math.sin(ph)) * 0.008 * player.sprint * amt,
+    player.yaw + sway(0.5, 4) * 0.008,
+    sway(0.6, 2) * 0.006 + bobX * 0.35 - strafeV * 0.006,
+  );
+  // FOV widens as the sprint builds: the corridor stretches away from you
+  const fov = BASE_FOV + 9 * player.sprint * Math.min(1, moving / RUN);
+  if (Math.abs(fov - camera.fov) > 0.01) {
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
   camera.updateMatrixWorld();
   return moving;
 }
@@ -334,7 +370,7 @@ function frame(now: number) {
   if (!mapEl.classList.contains('hidden')) minimap.draw(player.x, player.z, player.yaw);
   if (audio) {
     camera.getWorldDirection(fwd);
-    audio.update({ x: camera.position.x, y: camera.position.y, z: camera.position.z }, fwd, chunks.lights(), moving / 3.4, dt);
+    audio.update({ x: camera.position.x, y: camera.position.y, z: camera.position.z }, fwd, chunks.lights(), dt);
   }
   renderer.info.reset();
   post.render(scene, camera, time);

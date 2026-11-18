@@ -122,12 +122,14 @@ export class Avatars {
       const moved = Number.isNaN(a.lastX) ? 0 : Math.hypot(p.x - a.lastX, p.z - a.lastZ);
       a.lastX = p.x;
       a.lastZ = p.z;
-      a.phase += moved * 1.4;
-      const walking = Math.min(1, p.v / 1.6);
-      a.group.position.set(p.x, Math.abs(Math.sin(a.phase * Math.PI)) * 0.035 * walking, p.z);
-      a.group.rotation.set(0, p.yaw, Math.sin(a.phase * Math.PI) * 0.025 * walking);
+      a.phase += moved / (0.62 + 0.11 * p.v);
+      const walking = Math.min(1, p.v / 1.7);
+      const running = Math.max(0, Math.min(1, (p.v - 1.7) / 3.9));
+      a.group.position.set(p.x, Math.abs(Math.sin(a.phase * Math.PI)) * (0.035 + 0.05 * running) * walking, p.z);
+      // runners lean forward
+      a.group.rotation.set(-0.16 * running, p.yaw, Math.sin(a.phase * Math.PI) * 0.025 * walking, 'YXZ');
       a.stepDist += moved;
-      if (a.stepDist > 0.72) {
+      if (a.stepDist > 0.62 + 0.11 * p.v) {
         a.stepDist = 0;
         if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 < 40 * 40) this.onStep(p.x, p.z);
       }

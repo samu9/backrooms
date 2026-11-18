@@ -13,7 +13,6 @@ export class Soundscape {
   private brown: AudioBuffer;
   private buzzers: { panner: PannerNode; gain: GainNode; light: LightInfo | null; crackle: number }[] = [];
   private nextEvent = 0;
-  private stepPhase = 0;
   private muted = false;
 
   constructor() {
@@ -174,7 +173,7 @@ export class Soundscape {
   }
 
   /** Call every frame with the listener pose and the lights currently loaded. */
-  update(pos: V3, fwd: V3, lights: Iterable<LightInfo>, moving: number, dt: number) {
+  update(pos: V3, fwd: V3, lights: Iterable<LightInfo>, dt: number) {
     const c = this.ctx;
     const t = c.currentTime;
     const L = c.listener;
@@ -221,15 +220,6 @@ export class Soundscape {
       b.gain.gain.setTargetAtTime(target, t, 0.03);
     });
 
-    // own footsteps on damp carpet
-    if (moving > 0.05) {
-      this.stepPhase += dt * (1.6 + moving * 1.2);
-      if (this.stepPhase > 1) {
-        this.stepPhase -= 1;
-        this.thump({ x: pos.x, y: 0, z: pos.z }, 0.1 + moving * 0.05, 0.12, 380, false);
-      }
-    }
-
     if (t > this.nextEvent) {
       this.nextEvent = t + 7 + Math.random() * 16;
       this.event(pos, fwd);
@@ -261,6 +251,11 @@ export class Soundscape {
   }
 
   /** Muffled impact: noise burst + low sine. */
+  /** Our own footstep on damp carpet; `run` 0..1 makes it heavier. Driven by the head-bob cycle. */
+  playerStep(run: number) {
+    this.thump({ x: 0, y: 0, z: 0 }, 0.1 + 0.12 * run, 0.12 + 0.05 * run, 380 + 220 * run, false);
+  }
+
   /** Someone else's footstep at (x, z). */
   footstep(x: number, z: number) {
     this.thump({ x, y: 0.1, z }, 0.32, 0.16, 420, true);
