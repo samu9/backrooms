@@ -261,6 +261,11 @@ export class Soundscape {
   }
 
   /** Muffled impact: noise burst + low sine. */
+  /** Someone else's footstep at (x, z). */
+  footstep(x: number, z: number) {
+    this.thump({ x, y: 0.1, z }, 0.32, 0.16, 420, true);
+  }
+
   private thump(p: V3, amp: number, dur: number, cutoff: number, spatial = true, at = this.ctx.currentTime) {
     const c = this.ctx;
     const out = spatial ? this.spot(p, 0.9) : this.dry;

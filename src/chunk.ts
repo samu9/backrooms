@@ -29,6 +29,8 @@ export interface Chunk {
   group: THREE.Group;
   lights: LightInfo[];
   props: PropSpot[];
+  /** the per-chunk textures/uniform values, so moving objects can be lit like the chunk they stand in */
+  env: { occ: THREE.Texture; lights: THREE.Texture; origin: THREE.Vector2; lbase: THREE.Vector2 };
   dispose(): void;
 }
 
@@ -216,6 +218,7 @@ export function buildChunk(ci: number, cj: number, mats: { level: THREE.ShaderMa
     group,
     lights,
     props,
+    env: { occ: occTex, lights: lTex, origin, lbase },
     dispose() {
       levelGeo.dispose();
       levelMat.dispose();
@@ -268,6 +271,10 @@ export class ChunkManager {
       }
     }
     return want.length - built;
+  }
+
+  at(x: number, z: number): Chunk | undefined {
+    return this.chunks.get(Math.floor(x / CHUNK) + ',' + Math.floor(z / CHUNK));
   }
 
   *lights() {

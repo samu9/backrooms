@@ -46,6 +46,25 @@ function drawPin(c: CanvasRenderingContext2D, x: number, y: number, m: Marker, u
   c.restore();
 }
 
+/** Arrow for another player; `rot` is the canvas rotation (0 = pointing up). */
+export function drawPlayer(c: CanvasRenderingContext2D, x: number, y: number, rot: number, color: string, u: number) {
+  c.save();
+  c.translate(x, y);
+  c.rotate(rot);
+  c.fillStyle = color;
+  c.strokeStyle = 'rgba(0,0,0,0.8)';
+  c.lineWidth = u;
+  c.beginPath();
+  c.moveTo(0, -6 * u);
+  c.lineTo(4.5 * u, 5 * u);
+  c.lineTo(0, 2 * u);
+  c.lineTo(-4.5 * u, 5 * u);
+  c.closePath();
+  c.fill();
+  c.stroke();
+  c.restore();
+}
+
 interface Tile {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -62,6 +81,8 @@ export class Minimap {
   /** pixels per metre */
   scale = 4;
   markers: Marker[] = [];
+  /** other players, drawn as coloured arrows */
+  others: { x: number; z: number; yaw: number; color: string; name: string }[] = [];
   private nextId = 1;
   onReached: (m: Marker) => void = () => {};
 
@@ -250,6 +271,22 @@ export class Minimap {
         c.restore();
       }
     }
+    for (const o of this.others) {
+      const dx = (o.x - x) * k,
+        dz = (o.z - z) * k;
+      const mx = dx * cs - dz * sn;
+      const my = dx * sn + dz * cs;
+      const d = Math.hypot(mx, my);
+      if (d < R) drawPlayer(c, S / 2 + mx, S / 2 + my, yaw - o.yaw, o.color, u * 0.8);
+      else {
+        c.fillStyle = o.color;
+        c.globalAlpha = 0.85;
+        c.beginPath();
+        c.arc(S / 2 + (mx / d) * (S / 2 - 6 * u), S / 2 + (my / d) * (S / 2 - 6 * u), 3 * u, 0, Math.PI * 2);
+        c.fill();
+        c.globalAlpha = 1;
+      }
+    }
   }
 }
 
@@ -405,6 +442,13 @@ export class FullMap {
       c.setLineDash([]);
     }
     for (const m of this.map.markers) drawPin(c, sx(m.x), sy(m.z), m, u);
+    c.font = `${12 * dpr}px "Courier New", monospace`;
+    c.textAlign = 'center';
+    for (const o of this.map.others) {
+      drawPlayer(c, sx(o.x), sy(o.z), -o.yaw, o.color, u);
+      c.fillStyle = 'rgba(242, 240, 230, 0.9)';
+      c.fillText(o.name, sx(o.x), sy(o.z) - 12 * u);
+    }
     // player
     c.save();
     c.translate(sx(px), sy(pz));
