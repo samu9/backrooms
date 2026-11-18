@@ -96,13 +96,19 @@ float flicker(ivec2 li) {
   return mix(1.0, a * 0.85 + 0.05, burst);
 }
 
+// Soft occlusion along the segment a -> b through the occupancy texture. Samples are spaced in
+// metres (not as a fixed count), closer than the 0.5 m wall thickness, so no wall can fall between
+// two samples and leak light into the room behind it.
 float shadowMarch(vec2 a, vec2 b) {
+  vec2 d = b - a;
+  float len = length(d);
+  float stepL = uQuality > 0.5 ? 0.3 : 0.42;
+  int n = int(clamp(ceil(len / stepL), 2.0, 24.0));
   float v = 1.0;
-  int n = uQuality > 0.5 ? 4 : 2;
-  for (int i = 1; i <= 4; i++) {
-    if (i > n) break;
-    float t = float(i) / float(n + 1);
-    v *= 1.0 - smoothstep(0.2, 0.7, occ(mix(a, b, t)));
+  for (int i = 0; i < 24; i++) {
+    if (i >= n) break;
+    v *= 1.0 - smoothstep(0.15, 0.45, occ(a + d * ((float(i) + 0.5) / float(n))));
+    if (v < 0.01) return 0.0;
   }
   return v;
 }
@@ -237,8 +243,9 @@ vec3 lighting(vec3 p, vec3 n, float kind, out float onSum) {
     vec3 l = d / dist;
     float nl = kind > 0.5 && kind < 1.5 ? 0.0 : clamp(dot(n, l) * 0.85 + 0.15, 0.0, 1.0);
     float down = pow(clamp(l.y, 0.0, 1.0), 0.7) * 0.85 + 0.15;
-    float vis = shadowMarch(from, lp.xz);
     float att = 1.0 / (1.0 + dist * dist * 0.42);
+    if (att * win * inten < 0.004) continue; // too faint to bother tracing
+    float vis = shadowMarch(from, lp.xz);
     sum += lightTint(L.b) * inten * nl * down * att * vis * win;
     onSum += inten * vis * win * (1.0 / (1.0 + dist * 0.25));
   }
@@ -256,6 +263,7 @@ void main() {
   float rail = texture(uOcc, (floor((p.xz + n.xz * 0.26 - uChunkOrigin) / CELL + BORDER) + 0.5) / TEXN).b;
   vec3 alb;
   vec3 emis = vec3(0.0);
+  float wire = 0.0; // half-rendered wireframe edges glow faintly, but only where the lights are on
   float ao = 1.0;
   float H = ceilH(p.xz + n.xz * 0.26);
 
@@ -300,7 +308,7 @@ void main() {
     if (d > T + 0.08) {
       if (edge < 0.5) discard;
       alb = toLin(vec3(0.9, 0.86, 0.7)) * 0.5;
-      emis = vec3(0.09, 0.085, 0.06);
+      wire = 1.0;
     } else if (d > T) {
       float th = (d - T) / 0.08;
       float r = hash3(int(gl_FragCoord.x), int(gl_FragCoord.y), int(uTime * 12.0));
@@ -331,7 +339,7 @@ void main() {
   vec3 amb = mix(vec3(0.04, 0.034, 0.018), vec3(0.34, 0.31, 0.19), on);
   // the ceiling is lit by the bright carpet below
   if (kind > 0.5 && kind < 1.5) amb *= 1.75 + 0.5 * on;
-  vec3 col = alb * (direct + amb) * ao + emis;
+  vec3 col = alb * (direct + amb) * ao + emis + wire * vec3(0.09, 0.085, 0.06) * on;
 
   float dist = length(p - cameraPosition);
   float fog = 1.0 - exp(-dist * uFogDensity);
