@@ -10,7 +10,8 @@
     "shot": "node scripts/shot.mjs",
     "doc": "node scripts/build-doc.mjs",
     "server": "node server/server.ts",
-    "start": "vite build && node server/server.ts"
+    "start": "vite build && node server/server.ts",
+    "test": "node tests/hunt.test.ts"
   },
   "author": "",
   "license": "ISC",
