@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>How the Backrooms layout is generated</title>
+<style>
+  :root {
+    --bg: #faf7ec; --fg: #2a2617; --mute: #6f6850; --card: #fffdf5; --line: #e2dcc4;
+    --accent: #b8860b; --accent2: #c0392b; --code: #f2edd9;
+    --wall: #3a3012; --floor: #e6d38a; --door: #e67e22;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15130c; --fg: #ece5c8; --mute: #a39b7c; --card: #1d1a10; --line: #353020; --accent: #e0b84a; --accent2: #ff6b5b; --code: #26221a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 34px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 23px; margin: 48px 0 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 24px 0 6px; }
+  .sub { color: var(--mute); margin: 0 0 24px; }
+  code, pre { font: 13.5px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace; background: var(--code); border-radius: 4px; }
+  code { padding: 1px 5px; }
+  pre { padding: 12px 14px; overflow-x: auto; }
+  a { color: var(--accent); }
+  .tldr { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 14px 18px; }
+  .tldr ul { margin: 6px 0 0; padding-left: 20px; }
+  nav.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 18px 0 0; font-size: 14px; }
+  nav.toc a { text-decoration: none; }
+  .fig { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 16px 0; }
+  .fig figcaption, .cap { color: var(--mute); font-size: 13.5px; margin-top: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  canvas { display: block; width: 100%; image-rendering: pixelated; border-radius: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--mute); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid #0003; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 10px; font-size: 14px; }
+  .controls input[type=number] { width: 110px; }
+  .controls button, .controls input { font: inherit; padding: 3px 8px; border-radius: 5px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+  .controls button { cursor: pointer; }
+  .controls label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+  .explorer { display: grid; grid-template-columns: 1fr 260px; gap: 14px; }
+  @media (max-width: 860px) { .explorer { grid-template-columns: 1fr; } }
+  #info { font: 13px/1.55 ui-monospace, Menlo, monospace; background: var(--code); border-radius: 6px; padding: 10px 12px; white-space: pre; overflow: auto; min-height: 200px; }
+  #explore { cursor: grab; height: 520px; }
+  #anatomy { height: 340px; }
+  #mesh { height: 540px; }
+  #warp0, #warp1 { height: 260px; }
+  details { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+  details summary { cursor: pointer; font-weight: 600; }
+  .flow { width: 100%; height: auto; }
+  .flow text { font: 13px system-ui, sans-serif; fill: var(--fg); }
+  .flow .box { fill: var(--card); stroke: var(--accent); stroke-width: 1.4; }
+  .flow .dec { fill: var(--code); stroke: var(--mute); stroke-width: 1.2; }
+  .flow .arr { stroke: var(--mute); stroke-width: 1.4; fill: none; marker-end: url(#ah); }
+  .flow .yes { fill: var(--accent2); font-weight: 600; }
+  .flow .no { fill: var(--mute); }
+  .gotcha { border-left: 3px solid var(--accent2); padding: 2px 0 2px 14px; margin: 12px 0; }
+  .legend span { margin-right: 14px; font-size: 13px; color: var(--mute); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>How the Backrooms layout is generated</h1>
+  <p class="sub">The algorithm in <code>src/gen.ts</code> and <code>src/chunk.ts</code>. The pictures on this page come from the real generator code, bundled into this file.</p>
+
+  <div class="tldr">
+    <strong>TL;DR</strong>
+    <ul>
+      <li>The world isn't stored. <code>solid(gx, gz)</code> is a <b>pure function</b> of the seed and a 0.5&nbsp;m cell coordinate, so it's infinite, the same every time, and chunks can be built in any order.</li>
+      <li>The plane is cut into <b>zones</b> (~26&nbsp;m) with borders bent by noise. Each zone picks a type (office, maze, corridor, hall, weird, void) with its own wall spacing, door odds and ceiling height.</li>
+      <li>Inside a zone, walls run along <b>lines</b> every <code>S</code> cells. Each <b>segment</b> between two crossings exists or not, can have a <b>door</b>, and in weird zones can be <b>partial</b>. Blocks can get an extra <b>split</b> wall, and halls get <b>pillars</b>.</li>
+      <li>Grids from different zones are never reconciled where they meet. That clash is what makes the layout feel <b>wrong</b>.</li>
+      <li>Each chunk turns the grid into merged wall and ceiling quads and an occupancy texture. That's 2 draw calls per chunk.</li>
+    </ul>
+    <nav class="toc">
+      <a href="#explorer">▸ Live explorer</a><a href="#hash">1 · Hash</a><a href="#zones">2 · Zones</a><a href="#lines">3 · Lines, segments, doors</a>
+      <a href="#borders">4 · Why it feels wrong</a><a href="#lights">5 · Lights</a><a href="#geometry">6 · Geometry</a><a href="#gotchas">Gotchas</a>
+    </nav>
+  </div>
+
+  <h2 id="explorer">Live explorer</h2>
+  <p>Drag to pan, use the wheel to zoom, and click a cell to see why it's a wall or not. One pixel block is one 0.5&nbsp;m cell.</p>
+  <div class="fig">
+    <div class="controls">
+      <span>seed <input id="seed" type="number" value="7" /></span>
+      <button id="rnd">random seed</button>
+      <label><input type="checkbox" id="tZones" checked /> zone tint</label>
+      <label><input type="checkbox" id="tLines" /> wall-line grid</label>
+      <label><input type="checkbox" id="tLights" /> ceiling lights</label>
+      <label><input type="checkbox" id="tChunks" /> chunk grid (32 m)</label>
+      <button id="border">jump to a zone border</button>
+    </div>
+    <div class="explorer">
+      <canvas id="explore"></canvas>
+      <div>
+        <div id="info">click a cell…</div>
+        <div class="legend" id="zleg" style="margin-top:10px"></div>
+      </div>
+    </div>
+    <figcaption>Walls are dark. Floor is tinted by zone type. With the wall-line grid on, <span style="color:var(--door)">orange</span> cells are gaps on a wall line: either a door or a segment that was rolled away.</figcaption>
+  </div>
+
+  <h2 id="hash">1 · One hash, no state</h2>
+  <p>Every random choice goes through a single 32-bit integer hash (<code>src/gen.ts:23</code>):</p>
+  <pre>hash3(x, y, salt) → [0, 1)
+  h = x·374761393 + y·668265263 + (salt + seed·1013)·2246822519   (mod 2³²)
+  h = (h ^ h>>13)·1274126177;  h ^= h>>16;   return h / 2³²</pre>
+  <p>A decision is always <code>hash3(integer coordinates, the salt for that decision) &lt; probability</code>. Because the inputs are integers and the arithmetic wraps at 32 bits, JavaScript (<code>Math.imul</code>) and GLSL (<code>uint</code>) get <b>the same bits</b>. The shaders use the same hash for flicker timing and ceiling stains.</p>
+  <svg class="flow" viewBox="0 0 1000 210" role="img" aria-label="solid() decision flow">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" style="color:var(--mute)" /></marker></defs>
+    <rect class="box" x="10" y="80" width="120" height="50" rx="8" /><text x="70" y="101" text-anchor="middle">seed, gx, gz</text><text x="70" y="119" text-anchor="middle" class="no">cell coords</text>
+    <path class="arr" d="M130 105 H165" />
+    <rect class="box" x="165" y="80" width="130" height="50" rx="8" /><text x="230" y="101" text-anchor="middle">zoneAt()</text><text x="230" y="119" text-anchor="middle" class="no">warp → zone → params</text>
+    <path class="arr" d="M295 105 H330" />
+    <rect class="dec" x="330" y="80" width="110" height="50" rx="8" /><text x="385" y="101" text-anchor="middle">pillar corner?</text><text x="385" y="119" text-anchor="middle" class="no">hall / void</text>
+    <path class="arr" d="M440 105 H475" />
+    <rect class="dec" x="475" y="80" width="120" height="50" rx="8" /><text x="535" y="101" text-anchor="middle">on a wall line?</text><text x="535" y="119" text-anchor="middle" class="no">(g − off) mod S = 0</text>
+    <path class="arr" d="M595 105 H630" />
+    <rect class="dec" x="630" y="80" width="150" height="50" rx="8" /><text x="705" y="101" text-anchor="middle">segment exists, not</text><text x="705" y="119" text-anchor="middle">a door, not cut short?</text>
+    <path class="arr" d="M780 105 H815" />
+    <rect class="dec" x="815" y="80" width="120" height="50" rx="8" /><text x="875" y="101" text-anchor="middle">split wall in</text><text x="875" y="119" text-anchor="middle">this block?</text>
+    <path class="arr" d="M935 105 H985" /><text x="992" y="100" class="no" text-anchor="end">open</text>
+    <path class="arr" d="M385 80 V40" /><text x="385" y="32" text-anchor="middle" class="yes">WALL</text>
+    <path class="arr" d="M705 80 V40" /><text x="705" y="32" text-anchor="middle" class="yes">WALL</text>
+    <path class="arr" d="M875 80 V40" /><text x="875" y="32" text-anchor="middle" class="yes">WALL</text>
+    <path class="arr" d="M535 130 V170 H630" /><text x="560" y="190" class="no">not on a line → skip to split test</text>
+    <path class="arr" d="M835 170 H875 V130" />
+  </svg>
+  <p class="cap">What <code>solid(gx, gz)</code> does (<code>src/gen.ts:176</code>). It answers in a few dozen integer operations, with no memory of neighbouring cells.</p>
+
+  <h2 id="zones">2 · Zones: deciding what kind of space you're in</h2>
+  <p>The plane is divided into 52-cell (26&nbsp;m) zones. Square zones would be easy to spot, so before the cell is snapped to a zone, its coordinates are pushed by 1-D value noise along the <i>other</i> axis (<code>src/gen.ts:142</code>):</p>
+  <pre>wx = gx + floor(14 · noise(gz · 0.035))
+wz = gz + floor(14 · noise(gx · 0.031))
+zone = (floor(wx / 52), floor(wz / 52))    → cached params for that zone</pre>
+  <div class="grid2">
+    <figure class="fig" style="margin:0"><canvas id="warp0" height="260"></canvas><figcaption>Without warping: a tile grid you'd notice after a minute.</figcaption></figure>
+    <figure class="fig" style="margin:0"><canvas id="warp1" height="260"></canvas><figcaption>With warping (the real <code>zoneAt</code>): borders wander by up to 7&nbsp;m.</figcaption></figure>
+  </div>
+  <p>Each zone hashes its own coordinates to pick a type and parameters (<code>makeZone</code>, <code>src/gen.ts:68</code>):</p>
+  <table>
+    <thead><tr><th>Type</th><th>Share</th><th>Spacing S (cells)</th><th>Segment odds x / z</th><th>Doors</th><th>Extras</th><th>Ceiling</th></tr></thead>
+    <tbody id="ztable"></tbody>
+  </table>
+  <p class="cap">Every zone also gets a random grid offset <code>off ∈ [0, S)</code> and has a 30% chance of a wooden chair rail on its walls.</p>
+
+  <h2 id="lines">3 · Lines, segments, doors</h2>
+  <p>Inside a zone, walls can only sit on <b>wall lines</b>: one-cell-thick (0.5&nbsp;m) lines every <code>S</code> cells in both directions, shifted by <code>off</code>. Two lines cross at a <b>crossing</b>, and the piece of line between two crossings is a <b>segment</b>. Each segment is decided on its own:</p>
+  <div class="fig"><canvas id="anatomy" height="330"></canvas>
+    <figcaption>A hand-made 3×3-block example with <code>S = 10</code>. Each block shows one rule. The code is <code>segment()</code> at <code>src/gen.ts:158</code> and <code>solid()</code> at <code>src/gen.ts:176</code>.</figcaption></div>
+  <ol>
+    <li><b>Exists?</b> <code>hash(line, segment, zone+10) &lt; p</code> (or <code>pz</code> for lines along x). Corridor zones set one to 0.93 and the other to 0.1, which gives long parallel halls.</li>
+    <li><b>Door?</b> With probability <code>pd</code>, an opening <code>dw</code> cells wide is cut at a hashed position, never touching the crossing.</li>
+    <li><b>Partial?</b> In weird zones, each segment keeps only the hashed range <code>[a, b]</code>, so walls stop in the middle of a room.</li>
+    <li><b>Crossings</b> are wall if any of the four segments meeting there exists, so a junction never floats on its own or leaves a pinhole.</li>
+    <li><b>Split</b> (in blocks with <code>S ≥ 6</code>): with probability <code>split</code>, a block gets one extra wall across it at a hashed position, with its own door. This turns a regular grid into uneven rooms and closets.</li>
+    <li><b>Pillars</b> (hall and void zones): the corner of a block, 1×1 or 2×2 cells, becomes solid with probability <code>pillar</code>. These are the forests of columns.</li>
+  </ol>
+
+  <h2 id="borders">4 · Why it feels wrong (on purpose)</h2>
+  <p>Neighbouring zones are never reconciled. Where a maze with <code>S = 4</code> meets an office with <code>S = 14</code> and a different offset, each cell simply follows its own zone's rules. The result:</p>
+  <ul>
+    <li>walls that end flush against a wall from another grid, or a cell short of it;</li>
+    <li>corridors that open into a pillar hall at an odd offset, and slivers of room one cell wide;</li>
+    <li>the ceiling jumping between 2.2&nbsp;m and 6&nbsp;m in the middle of a room, because height belongs to the zone, not to the room. The chunk builder turns that jump into a soffit face.</li>
+  </ul>
+  <p>Press <b>jump to a zone border</b> in the explorer to see one. Nothing checks that the layout makes sense, and nothing makes sure every space is reachable (see <a href="#gotchas">gotchas</a>).</p>
+
+  <h2 id="lights">5 · Ceiling lights</h2>
+  <p>Panels sit on a fixed 3&nbsp;m lattice that ignores zones (<code>lightKind</code>, <code>src/gen.ts:222</code>):</p>
+  <ul>
+    <li>A panel covers 1.2×0.6&nbsp;m. If <i>any</i> of the 8 cells under it is wall, there's no panel.</li>
+    <li>5% are missing, 8% are dead, and 7% flicker (the flicker timing is hashed in the shader). On top of that, about 8% of 5×5-panel blocks (15&nbsp;m) are entirely dead. Those are the dark areas.</li>
+    <li>Each chunk bakes the states of the 16×16 panels around it into a tiny texture. The fragment shader reads the 4×4 nearest panels and softens their contribution towards the edge of that window, so no seam shows as the set of panels changes.</li>
+  </ul>
+
+  <h2 id="geometry">6 · From cells to triangles</h2>
+  <p>A chunk is 64×64 cells (32&nbsp;m). <code>buildChunk</code> (<code>src/chunk.ts</code>) samples <code>solid()</code> and the ceiling height over a <b>96×96</b> window: the chunk plus a 16-cell border on every side.</p>
+  <div class="fig"><canvas id="mesh" height="420"></canvas>
+    <figcaption id="meshcap">A real chunk from this seed. Each coloured stroke is one merged wall quad. Outlined rectangles are merged ceiling quads.</figcaption></div>
+  <ul>
+    <li><b>Walls</b> (<code>src/chunk.ts:144</code>): for each cell edge the chunk owns, a face is emitted where wall meets open space (height = the open cell's ceiling) or where two open cells have different ceilings (a soffit, facing the taller side). Runs of identical faces are merged into one quad.</li>
+    <li><b>Ceilings</b> (<code>src/chunk.ts:126</code>): open cells are greedily merged into rectangles of equal height.</li>
+    <li><b>Floor</b>: one quad for the whole chunk. Walls hide the floor underneath them.</li>
+    <li><b>Occupancy texture</b>: the 96×96 window is uploaded as RGBA8 (wall, ceiling height, chair rail). Because of the border, the shader can see the neighbouring chunks' walls for soft shadows and corner darkening.</li>
+    <li>Collision, the minimap and the screenshot viewpoints all call the same <code>solid()</code>, so what you see, bump into and map always matches.</li>
+  </ul>
+
+  <h2 id="gotchas">Gotchas</h2>
+  <div class="gotcha"><b>No guarantee every space is reachable.</b> Door odds are high enough that you're almost never sealed in, but it can happen, most often in maze zones. Noclip (<code>N</code>) is the escape hatch, and it fits the setting.</div>
+  <div class="gotcha"><b>The hash exists twice.</b> <code>hash3</code> in <code>gen.ts</code> and in <code>shaders.ts</code> must stay identical, including the <code>seed·1013</code> salt. Otherwise flicker and stains won't match between CPU and GPU.</div>
+  <div class="gotcha"><b>Floor division everywhere.</b> Negative coordinates need <code>Math.floor</code> and a true modulo (<code>((a % b) + b) % b</code>). Using <code>|0</code> or <code>%</code> on its own mirrors the grid around the origin.</div>
+  <div class="gotcha"><b>The zone cache is only a speed-up.</b> Zone parameters are cached because <code>solid()</code> runs about 9k times per chunk build. The cache is cleared when the seed changes. Correctness never depends on it.</div>
+  <div class="gotcha"><b>Edge ownership.</b> A chunk emits wall faces only for cell edges <code>0..63</code> on each axis. Edge 64 belongs to the next chunk, so faces are never doubled or missing at chunk borders.</div>
+</div>
+
+<script>
+/*GEN*/
+</script>
+<script>
+const G = Gen;
+const ZT = [
+  { name: 'Office', color: '#e6d38a', share: '34%', S: '10–16', p: '0.72 / 0.72', d: '80%, 2–3 wide', x: 'split 0.45', h: '2.75 (15%: 2.35)' },
+  { name: 'Maze', color: '#d9a35c', share: '16%', S: '4–6', p: '0.55 / 0.55', d: '30%, 2 wide', x: '—', h: '2.6' },
+  { name: 'Hall', color: '#b9d07a', share: '14%', S: '10–16', p: '0.10 / 0.10', d: '50%, 3 wide', x: 'pillars 0.9 (1×1 or 2×2)', h: '3.1 (35%: 4.6)' },
+  { name: 'Void', color: '#cfc8b0', share: '10%', S: '22', p: '0.06 / 0.06', d: '20%, 3 wide', x: 'pillars 0.25, 2×2', h: '2.75 or 6.0' },
+  { name: 'Weird', color: '#d58fb0', share: '12%', S: '6–9', p: '0.62 / 0.62', d: '55%, 1–4 wide', x: 'partial walls, split 0.6', h: '2.2 / 2.75 / 3.4' },
+  { name: 'Corridor', color: '#8fc3d5', share: '14%', S: '4–6', p: '0.93 / 0.10 (or flipped)', d: '22%, 2 wide', x: '—', h: '2.6' },
+];
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const WALL = [58, 48, 18];
+const DOOR = [230, 126, 34];
+
+document.getElementById('ztable').innerHTML = ZT.map((z) => `<tr><td><span class="sw" style="background:${z.color}"></span>${z.name}</td><td>${z.share}</td><td>${z.S}</td><td>${z.p}</td><td>${z.d}</td><td>${z.x}</td><td>${z.h} m</td></tr>`).join('');
+document.getElementById('zleg').innerHTML = ZT.map((z) => `<span><span class="sw" style="background:${z.color}"></span>${z.name}</span>`).join('');
+
+function fitCanvas(cv) {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  const w = cv.clientWidth, h = cv.clientHeight || +cv.getAttribute('height');
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  return { dpr, w, h };
+}
+const mod = (a, b) => ((a % b) + b) % b;
+
+// ---------- explorer ----------
+const ex = { cx: 0, cz: 0, px: 4, sel: null };
+const cv = document.getElementById('explore');
+const ctx = cv.getContext('2d');
+const off = document.createElement('canvas');
+function drawExplorer() {
+  const { dpr, w, h } = fitCanvas(cv);
+  const cols = Math.ceil(w / ex.px) + 1, rows = Math.ceil(h / ex.px) + 1;
+  const gx0 = Math.floor(ex.cx - cols / 2), gz0 = Math.floor(ex.cz - rows / 2);
+  off.width = cols; off.height = rows;
+  const octx = off.getContext('2d');
+  const img = octx.createImageData(cols, rows);
+  const showZ = tZones.checked, showL = tLines.checked;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const gx = gx0 + c, gz = gz0 + r;
+    const z = G.zoneAt(gx, gz);
+    let col;
+    if (G.solid(gx, gz)) col = WALL;
+    else {
+      col = showZ ? hex(ZT[z.type].color) : [230, 211, 138];
+      if (showL) {
+        const onX = mod(gx - z.off, z.S) === 0, onZ = mod(gz - z.off, z.S) === 0;
+        if (onX || onZ) col = DOOR;
+      }
+    }
+    const i = (r * cols + c) * 4;
+    img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+  const fx = (ex.cx - cols / 2 - gx0) * ex.px, fz = (ex.cz - rows / 2 - gz0) * ex.px;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, -fx, -fz, cols * ex.px, rows * ex.px);
+  const sx = (gx) => (gx - gx0) * ex.px - fx, sz = (gz) => (gz - gz0) * ex.px - fz;
+  if (tChunks.checked) {
+    ctx.strokeStyle = 'rgba(192,57,43,0.7)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let g = Math.ceil(gx0 / 64) * 64; g < gx0 + cols; g += 64) { ctx.moveTo(sx(g), 0); ctx.lineTo(sx(g), h); }
+    for (let g = Math.ceil(gz0 / 64) * 64; g < gz0 + rows; g += 64) { ctx.moveTo(0, sz(g)); ctx.lineTo(w, sz(g)); }
+    ctx.stroke();
+  }
+  if (tLights.checked) {
+    const i0 = Math.floor((gx0 * 0.5) / 3) - 1, i1 = Math.ceil(((gx0 + cols) * 0.5) / 3);
+    const j0 = Math.floor((gz0 * 0.5) / 3) - 1, j1 = Math.ceil(((gz0 + rows) * 0.5) / 3);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = G.lightKind(i, j);
+      if (!k) continue;
+      const lx = ((i + 0.5) * 3) / 0.5, lz = ((j + 0.5) * 3) / 0.5;
+      ctx.fillStyle = k === 1 ? '#777' : k === 3 ? '#ff4d3d' : '#fffbe8';
+      ctx.strokeStyle = '#0006';
+      ctx.fillRect(sx(lx - 1.2), sz(lz - 0.6), 2.4 * ex.px, 1.2 * ex.px);
+      ctx.strokeRect(sx(lx - 1.2), sz(lz - 0.6), 2.4 * ex.px, 1.2 * ex.px);
+    }
+  }
+  if (ex.sel) {
+    ctx.strokeStyle = '#ff2d2d'; ctx.lineWidth = 2;
+    ctx.strokeRect(sx(ex.sel[0]) - 1, sz(ex.sel[1]) - 1, ex.px + 2, ex.px + 2);
+  }
+  ex.toCell = (mx, my) => [Math.floor(gx0 + (mx + fx) / ex.px), Math.floor(gz0 + (my + fz) / ex.px)];
+}
+function explain(gx, gz) {
+  const z = G.zoneAt(gx, gz);
+  const lx = mod(gx - z.off, z.S), lz = mod(gz - z.off, z.S);
+  const s = G.solid(gx, gz);
+  let why;
+  if (z.pillar > 0 && lx < z.pillarSize && lz < z.pillarSize) why = s ? 'pillar corner (rolled yes)' : 'pillar corner (rolled no)';
+  else if (lx === 0 && lz === 0) why = s ? 'crossing: an adjoining segment exists' : 'crossing: no segment meets here';
+  else if (lx === 0 || lz === 0) why = s ? 'on a wall line, segment present' : 'on a wall line: door gap, segment absent, or cut short';
+  else why = s ? 'inside a block: split wall' : 'inside a block: open floor';
+  return [
+    `cell        ${gx}, ${gz}   (${(gx * 0.5).toFixed(1)} m, ${(gz * 0.5).toFixed(1)} m)`,
+    `chunk       ${Math.floor(gx / 64)}, ${Math.floor(gz / 64)}`,
+    ``,
+    `zone type   ${ZT[z.type].name}`,
+    `S / off     ${z.S} / ${z.off}`,
+    `p / pz      ${z.p} / ${z.pz}`,
+    `door        ${z.pd}  width ${z.dw}`,
+    `split       ${z.split}`,
+    `pillar      ${z.pillar}  size ${z.pillarSize}`,
+    `partial     ${z.partial}`,
+    `ceiling     ${z.h} m   rail ${z.rail}`,
+    ``,
+    `local       x ${lx}  z ${lz}  (mod S)`,
+    `solid       ${s ? 'WALL' : 'open'}`,
+    `why         ${why}`,
+  ].join('\n');
+}
+let drag = null;
+cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, cx: ex.cx, cz: ex.cz, moved: false }; cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; });
+cv.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 3) drag.moved = true;
+  ex.cx = drag.cx - (e.clientX - drag.x) / ex.px; ex.cz = drag.cz - (e.clientY - drag.y) / ex.px;
+  schedule();
+});
+cv.addEventListener('pointerup', (e) => {
+  cv.style.cursor = 'grab';
+  if (drag && !drag.moved) {
+    const r = cv.getBoundingClientRect();
+    ex.sel = ex.toCell(e.clientX - r.left, e.clientY - r.top);
+    document.getElementById('info').textContent = explain(ex.sel[0], ex.sel[1]);
+    schedule();
+  }
+  drag = null;
+});
+cv.addEventListener('wheel', (e) => { e.preventDefault(); ex.px = Math.max(1, Math.min(16, ex.px * Math.exp(-e.deltaY * 0.0015))); schedule(); }, { passive: false });
+let pending = false;
+function schedule() { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; drawExplorer(); }); } }
+const seedEl = document.getElementById('seed');
+function setSeed(s) { seedEl.value = s; G.setSeed(s); ex.sel = null; drawAll(); }
+seedEl.addEventListener('change', () => setSeed(+seedEl.value | 0));
+document.getElementById('rnd').onclick = () => setSeed(Math.floor(Math.random() * 1e6));
+for (const id of ['tZones', 'tLines', 'tLights', 'tChunks']) document.getElementById(id).addEventListener('change', schedule);
+document.getElementById('border').onclick = () => {
+  // walk outward until two horizontally adjacent cells belong to zones of different type
+  for (let t = 0; t < 4000; t++) {
+    const a = Math.random() * Math.PI * 2, r = 30 + Math.random() * 600;
+    const gx = Math.round(ex.cx + Math.cos(a) * r), gz = Math.round(ex.cz + Math.sin(a) * r);
+    const z1 = G.zoneAt(gx, gz), z2 = G.zoneAt(gx + 1, gz), z3 = G.zoneAt(gx, gz + 1);
+    if (z1.type !== z2.type || z1.type !== z3.type) { ex.cx = gx; ex.cz = gz; ex.px = 6; ex.sel = [gx, gz]; document.getElementById('info').textContent = explain(gx, gz); schedule(); return; }
+  }
+};
+
+// ---------- zone warp figure ----------
+function drawWarp(id, warped) {
+  const c = document.getElementById(id), { dpr, w, h } = fitCanvas(c), x = c.getContext('2d');
+  const cell = 3, cols = Math.ceil(w / cell), rows = Math.ceil(h / cell);
+  const o = document.createElement('canvas'); o.width = cols; o.height = rows;
+  const ox = o.getContext('2d'), img = ox.createImageData(cols, rows);
+  for (let r = 0; r < rows; r++) for (let q = 0; q < cols; q++) {
+    const gx = (q - cols / 2) * 2, gz = (r - rows / 2) * 2;
+    let t;
+    if (warped) t = G.zoneAt(gx, gz).type;
+    else { const zi = Math.floor(gx / 52), zj = Math.floor(gz / 52); const v = G.hash3(zi, zj, 1); t = v < 0.34 ? 0 : v < 0.5 ? 1 : v < 0.64 ? 5 : v < 0.78 ? 2 : v < 0.9 ? 4 : 3; }
+    const col = hex(ZT[t].color), i = (r * cols + q) * 4;
+    img.data.set([col[0], col[1], col[2], 255], i);
+  }
+  ox.putImageData(img, 0, 0);
+  x.setTransform(dpr, 0, 0, dpr, 0, 0); x.imageSmoothingEnabled = false;
+  x.drawImage(o, 0, 0, cols * cell, rows * cell);
+}
+
+// ---------- anatomy figure (hand-built example) ----------
+function drawAnatomy() {
+  const c = document.getElementById('anatomy'), { dpr, w, h } = fitCanvas(c), x = c.getContext('2d');
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  x.fillStyle = css('--card'); x.fillRect(0, 0, w, h);
+  const S = 10, N = 3 * S + 1, px = Math.min((w - 300) / N, (h - 20) / N), ox = 10, oz = 10;
+  const grid = Array.from({ length: N }, () => new Array(N).fill(0)); // 0 open, 1 wall, 2 door gap, 3 missing, 4 split, 5 pillar
+  const line = (axis, k, from, to, val) => { for (let t = from; t <= to; t++) axis === 'x' ? (grid[t][k] = val) : (grid[k][t] = val); };
+  // vertical lines (constant x) and horizontal lines (constant z), segment by segment
+  for (let k = 0; k <= 3; k++) for (let s = 0; s < 3; s++) { line('x', k * S, s * S, s * S + S, 1); line('z', k * S, s * S, s * S + S, 1); }
+  // a door in the top-middle vertical segment
+  for (let t = 4; t < 7; t++) grid[t][S] = 2;
+  // a missing segment
+  for (let t = S + 1; t < 2 * S; t++) grid[t][2 * S] = 3;
+  // a partial wall: only part of the segment remains
+  for (let t = 2 * S + 1; t < 2 * S + 7; t++) grid[2 * S][t] = 3;
+  // a split wall with its own door in the bottom-left block
+  for (let t = 1; t < S; t++) grid[2 * S + 5][t] = t >= 3 && t < 5 ? 2 : 4;
+  // pillars in the right column of blocks (hall-style)
+  for (const [a, b] of [[S + 4, 2 * S + 4], [S + 4, 2 * S + 5], [S + 5, 2 * S + 4], [S + 5, 2 * S + 5]]) grid[a][b] = 5;
+  const colors = { 0: '#efe2a8', 1: '#3a3012', 2: '#e67e22', 3: 'rgba(58,48,18,0.15)', 4: '#7a5a1c', 5: '#2f6f8f' };
+  for (let r = 0; r < N; r++) for (let q = 0; q < N; q++) { x.fillStyle = colors[grid[r][q]]; x.fillRect(ox + q * px, oz + r * px, px - 0.5, px - 0.5); }
+  const L = ox + N * px + 24;
+  const items = [[1, 'segment present'], [3, 'segment absent / cut short (partial)'], [2, 'door gap (width dw)'], [4, 'split wall inside a block'], [5, 'pillar (illustrated mid-block)'], [0, 'open floor']];
+  x.font = '13px system-ui, sans-serif'; x.textBaseline = 'middle';
+  items.forEach(([k, t], i) => { x.fillStyle = colors[k]; x.fillRect(L, 30 + i * 28 - 8, 16, 16); x.strokeStyle = '#0004'; x.strokeRect(L, 30 + i * 28 - 8, 16, 16); x.fillStyle = css('--fg'); x.fillText(t, L + 24, 30 + i * 28); });
+  x.fillStyle = css('--mute');
+  x.fillText('every S = 10 cells: a wall line', L, 30 + 6 * 28 + 10);
+  x.fillText('line × line: a crossing', L, 30 + 6 * 28 + 30);
+  x.fillText('1 cell = 0.5 m', L, 30 + 6 * 28 + 50);
+}
+
+// ---------- greedy meshing figure (real chunk) ----------
+function drawMesh() {
+  const c = document.getElementById('mesh'), { dpr, w, h } = fitCanvas(c), x = c.getContext('2d');
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  x.fillStyle = css('--card'); x.fillRect(0, 0, w, h);
+  // pick the chunk under the explorer's centre
+  const ci = Math.floor(ex.cx / 64), cj = Math.floor(ex.cz / 64), gx0 = ci * 64, gz0 = cj * 64, N = 64;
+  const px = Math.min((w - 20) / N, (h - 20) / N), ox = (w - N * px) / 2, oz = 10;
+  const S = (lx, lz) => G.solid(gx0 + lx, gz0 + lz);
+  const H = (lx, lz) => G.ceilingAt(gx0 + lx, gz0 + lz);
+  for (let z = 0; z < N; z++) for (let q = 0; q < N; q++) { x.fillStyle = S(q, z) ? '#3a3012' : '#efe2a8'; x.fillRect(ox + q * px, oz + z * px, px, px); }
+  // ceilings (greedy rectangles)
+  const used = new Uint8Array(N * N); let nCeil = 0;
+  x.strokeStyle = 'rgba(47,111,143,0.75)'; x.lineWidth = 1.2;
+  for (let z = 0; z < N; z++) for (let q = 0; q < N; q++) {
+    if (used[z * N + q] || S(q, z)) continue;
+    const hh = H(q, z); let ww = 1;
+    while (q + ww < N && !used[z * N + q + ww] && !S(q + ww, z) && H(q + ww, z) === hh) ww++;
+    let d = 1;
+    outer: while (z + d < N) { for (let k = 0; k < ww; k++) if (used[(z + d) * N + q + k] || S(q + k, z + d) || H(q + k, z + d) !== hh) break outer; d++; }
+    for (let a = 0; a < d; a++) for (let k = 0; k < ww; k++) used[(z + a) * N + q + k] = 1;
+    x.strokeRect(ox + q * px + 1.5, oz + z * px + 1.5, ww * px - 3, d * px - 3); nCeil++;
+  }
+  // walls: merged runs along each owned edge
+  const face = (ax, az, bx, bz) => { const sa = S(ax, az), sb = S(bx, bz); if (sa && sb) return null; if (sa) return '+' + H(bx, bz); if (sb) return '-' + H(ax, az); const ha = H(ax, az), hb = H(bx, bz); return ha === hb ? null : (ha < hb ? 's+' : 's-') + ha + hb; };
+  const pal = ['#c0392b', '#e67e22', '#8e44ad', '#16a085'];
+  let nWall = 0, nCells = 0;
+  x.lineWidth = Math.max(2, px * 0.35); x.lineCap = 'butt';
+  for (let q = 0; q < N; q++) { let z = 0; while (z < N) { const f = face(q - 1, z, q, z); if (!f) { z++; continue; } let len = 1; while (z + len < N && face(q - 1, z + len, q, z + len) === f) len++; x.strokeStyle = pal[nWall % 4]; x.beginPath(); x.moveTo(ox + q * px, oz + z * px + 1); x.lineTo(ox + q * px, oz + (z + len) * px - 1); x.stroke(); nWall++; nCells += len; z += len; } }
+  for (let z = 0; z < N; z++) { let q = 0; while (q < N) { const f = face(q, z - 1, q, z); if (!f) { q++; continue; } let len = 1; while (q + len < N && face(q + len, z - 1, q + len, z) === f) len++; x.strokeStyle = pal[nWall % 4]; x.beginPath(); x.moveTo(ox + q * px + 1, oz + z * px); x.lineTo(ox + (q + len) * px - 1, oz + z * px); x.stroke(); nWall++; nCells += len; q += len; } }
+  document.getElementById('meshcap').innerHTML = `Chunk (${ci}, ${cj}) for seed ${seedEl.value}, the one under the explorer's centre. Coloured strokes are merged wall quads (<b>${nWall}</b> quads instead of <b>${nCells}</b> one-cell faces). Blue outlines are merged ceiling quads (<b>${nCeil}</b> instead of up to 4096 cells). Add one floor quad and the whole chunk is a single draw call.`;
+}
+
+function drawAll() { drawExplorer(); drawWarp('warp0', false); drawWarp('warp1', true); drawAnatomy(); drawMesh(); }
+G.setSeed(+seedEl.value);
+addEventListener('resize', drawAll);
+let meshT; cv.addEventListener('pointerup', () => { clearTimeout(meshT); meshT = setTimeout(drawMesh, 150); });
+drawAll();
+</script>
+</body>
+</html>
