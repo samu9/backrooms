@@ -18,6 +18,26 @@ npm run build      # static site in dist/
 Click to enter. Mouse to look, `WASD` to walk, `Shift` to run, `N` noclip, `V` camcorder effects,
 `H` camcorder overlay, `Tab` minimap (`[` `]` zoom), `M` full map (click to place marks to reach), `K` sound, `P` stats, `F` fullscreen. `?seed=123` picks a world.
 
+## Multiplayer
+
+Several people can walk the same Backrooms. The world is a pure function of the seed, so the relay
+never sends level data: it only gives everyone in a room the same seed and passes player positions
+around (about 15 Hz, interpolated 120 ms behind).
+
+```bash
+npm run server     # relay on :5191 (the vite dev server proxies /ws to it)
+npm run dev        # then open http://127.0.0.1:5190/?room=my-room&name=alice
+```
+
+Or type a room and name in the menu and press **JOIN**. Everyone using the same room name meets in
+the same world. The first person to join decides the seed (`&seed=123` picks one), and the room
+lasts as long as someone is in it. Other players appear as faceless office workers, lit by the same
+panels as you, with a name tag and footsteps you can hear through the walls. They also show up as
+arrows on the minimap and the full map.
+
+For a single deployment, `npm start` builds the client and serves `dist/` and the relay from one
+port (`PORT=8080 npm start`). If the relay can't be reached, the game falls back to single player.
+
 ## How it works
 
 Stack: three.js on WebGL2, hand-written GLSL, Web Audio, Vite + TypeScript (the same approach as
@@ -31,6 +51,7 @@ Synthwave City), plus Playwright for screenshots.
 | Materials | `src/shaders.ts` | Procedural wallpaper (column lines, chevrons, seams, grime, water stains), carpet, 2×4 ft acoustic tiles and prismatic light panels. Fine detail fades out based on how much of the surface each pixel covers, so it doesn't shimmer (moiré). |
 | Props | `src/props.ts` | Furniture is built from boxes. A prop can be half-rendered (wireframe above a moving "streaming" edge, plain untextured grey below it), merged into the surface it touches (its colour turns into carpet, wallpaper or ceiling tile), or covered in wallpaper. Also: doors leading nowhere and stairs into the ceiling. |
 | Post | `src/post.ts` | HDR + MSAA, two-level bloom, ACES tone mapping, yellow/olive grade, composite-video chroma bleed, chromatic aberration, tape jitter, grain, vignette. Resolution scales automatically to keep the frame time under about 18 ms. |
+| Multiplayer | `server/server.ts`, `src/net.ts`, `src/avatars.ts` | WebSocket relay with rooms (max 16), one pose batch per room per tick, snapshot interpolation on the client. Avatars are lit with the prop shader and the textures of the chunk they stand in. |
 | Sound | `src/audio.ts` | Hum from the mains and the ballasts. The nearest panels buzz as HRTF-positioned sources, and the flickering ones crackle. Random events through a synthetic reverb: footsteps that aren't yours, knocking inside walls, distant slams, drones, creaks, and breathing behind you. |
 
 ## Screenshots
@@ -41,4 +62,5 @@ node scripts/shot.mjs --out shots/x --views 0,1,2          # auto viewpoints wit
 node scripts/shot.mjs --out shots/x --views "prop=3&pname=door"
 node scripts/sheet.mjs shots/x/sheet.png shots/x/*.png     # contact sheet
 node scripts/smoke.mjs                                      # interactive run, errors + stats
+node scripts/mptest.mjs                                     # two players in one room (needs npm run server)
 ```

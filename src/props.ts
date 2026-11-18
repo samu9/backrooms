@@ -4,8 +4,8 @@ import * as THREE from 'three';
 import { CELL, CHUNK_CELLS, ceilingAt, rng, solid } from './gen';
 
 // [cx, cy, cz, sx, sy, sz, colour]
-type Box = [number, number, number, number, number, number, number];
-interface Template {
+export type Box = [number, number, number, number, number, number, number];
+export interface Template {
   boxes: Box[];
   h: number;
   d: number; // depth (z extent) used when pushing into walls
@@ -154,10 +154,10 @@ const FACES: [number[], number[], number[], number[]][] = [
   [[0.5, -0.5, -0.5], [-1, 0, 0], [0, 1, 0], [0, 0, -1]],
 ];
 
-function emitProp(g: GeoBuilder, t: Template, m: THREE.Matrix4, mode: number, seed: number, emissive: boolean) {
+export function emitProp(g: GeoBuilder, t: Template, m: THREE.Matrix4, mode: number, seed: number, emissive: boolean, palette = PALETTE) {
   const nm = new THREE.Matrix3().getNormalMatrix(m);
   for (const [cx, cy, cz, sx, sy, sz, ci] of t.boxes) {
-    const col = PALETTE[ci];
+    const col = palette[ci];
     const c = emissive && ci === 11 ? [1.0, 0.25, 0.18] : col;
     _bm.makeScale(sx, sy, sz).setPosition(cx, cy, cz).premultiply(m);
     for (const [o, eu, ev, nn] of FACES) {

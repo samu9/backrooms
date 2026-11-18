@@ -3,12 +3,30 @@ import { Soundscape } from './audio';
 import { ChunkManager, makeMaterials, type Shared } from './chunk';
 import { CELL, findFree, freeDistance, rng, setSeed, solid } from './gen';
 import { FullMap, Minimap } from './minimap';
+import { Avatars } from './avatars';
+import { Net } from './net';
 import { Post } from './post';
 
 const q = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (q.has(k) ? Number(q.get(k)) : d);
 const SHOT = q.has('shot');
-const seed = num('seed', SHOT ? 1 : Math.floor(Math.random() * 1e6));
+// ---------- multiplayer: join a room before building anything, the room decides the seed ----------
+const ROOM = SHOT ? '' : (q.get('room') ?? '').trim();
+const NAME = (q.get('name') ?? localStorage.getItem('br-name') ?? `wanderer-${Math.floor(Math.random() * 900 + 100)}`).slice(0, 20);
+let net: Net | null = null;
+let netError = '';
+let seed = num('seed', SHOT ? 1 : Math.floor(Math.random() * 1e6));
+if (ROOM) {
+  localStorage.setItem('br-name', NAME);
+  const n = new Net();
+  try {
+    seed = await n.connect(ROOM, NAME, q.has('seed') ? seed : null);
+    net = n;
+  } catch (e) {
+    netError = (e as Error).message;
+    console.warn('multiplayer unavailable, playing alone:', netError);
+  }
+}
 setSeed(seed);
 
 // ---------- renderer ----------
@@ -97,7 +115,9 @@ if (q.has('view')) {
   const v = viewpoint(num('view', 0));
   Object.assign(player, v);
 } else {
-  const [x, z] = findFree(num('x', 0), num('z', 0), 2);
+  // in a room, spread arrivals out a little so people don't spawn inside each other
+  const jitter = net ? 5 : 0;
+  const [x, z] = findFree(num('x', 0) + (Math.random() - 0.5) * jitter, num('z', 0) + (Math.random() - 0.5) * jitter, 2);
   player.x = x;
   player.z = z;
 }
@@ -154,6 +174,38 @@ function toast(msg: string) {
   toastT = 3;
 }
 minimap.onReached = (m) => toast(`MARK ${m.id} REACHED`);
+
+// ---------- other players ----------
+const avatars = new Avatars(scene, mats.prop, shared as unknown as Record<string, THREE.IUniform>, chunks, (x, z) => audio?.footstep(x, z));
+const roomEl = document.getElementById('room')!;
+function roomLabel() {
+  if (!net) {
+    roomEl.textContent = netError ? 'OFFLINE' : '';
+    return;
+  }
+  roomEl.textContent = net.connected ? `ROOM ${net.room.toUpperCase()} · ${net.peers.size + 1}` : 'SIGNAL LOST';
+}
+if (net) {
+  for (const p of net.peers.values()) avatars.add(p);
+  net.onJoin = (p) => {
+    avatars.add(p);
+    toast(`${p.name.toUpperCase()} ENTERED`);
+    roomLabel();
+  };
+  net.onLeave = (p) => {
+    avatars.remove(p.id);
+    toast(`${p.name.toUpperCase()} NOCLIPPED OUT`);
+    roomLabel();
+  };
+  net.onClose = () => {
+    roomLabel();
+    toast('SIGNAL LOST');
+  };
+}
+roomLabel();
+// handle for automated tests (scripts/mptest.mjs)
+(window as unknown as { __game: unknown }).__game = { player, freeDistance, get net() { return net; } };
+if (netError) setTimeout(() => toast('RELAY UNREACHABLE · ALONE'), 500);
 function toggleFullMap() {
   if (fullmap.open) closeFullMap(true);
   else {
@@ -171,6 +223,26 @@ function closeFullMap(resume: boolean) {
 }
 let audio: Soundscape | null = null;
 let started = false;
+// multiplayer form in the menu: joining a room reloads into it (the room decides the seed)
+const mpForm = document.getElementById('mp') as HTMLFormElement;
+const mpRoom = document.getElementById('mpRoom') as HTMLInputElement;
+const mpName = document.getElementById('mpName') as HTMLInputElement;
+mpRoom.value = ROOM;
+mpName.value = NAME;
+mpForm.addEventListener('click', (e) => e.stopPropagation());
+mpForm.addEventListener('keydown', (e) => e.stopPropagation());
+mpForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const r = mpRoom.value.trim();
+  const u = new URL(location.href);
+  u.search = '';
+  if (r) {
+    u.searchParams.set('room', r);
+    u.searchParams.set('name', mpName.value.trim() || NAME);
+  }
+  location.href = u.toString();
+});
+if (ROOM) document.getElementById('mpHint')!.textContent = net ? `in room "${ROOM}" with ${net.peers.size} other(s) · seed ${seed}` : `could not reach the relay (${netError})`;
 menu.addEventListener('click', () => {
   canvas.requestPointerLock();
   if (!audio) {
@@ -246,6 +318,12 @@ function frame(now: number) {
   chunks.update(player.x, player.z, started || SHOT ? 4 : 12);
   minimap.reveal(player.x, player.z, dt, SHOT);
   minimap.checkReached(player.x, player.z);
+  if (net) {
+    net.sendPose(player.x, player.z, player.yaw, player.pitch, moving);
+    net.sample();
+    avatars.update(net.peers.values(), player.x, player.z);
+    minimap.others = [...net.peers.values()].filter((p) => p.visible);
+  }
   fullmap.draw(player.x, player.z, player.yaw, dt);
   const tgt = minimap.target;
   if (tgt) {

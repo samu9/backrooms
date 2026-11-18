@@ -34,13 +34,18 @@
       #fullmap { position: fixed; inset: 0; width: 100vw; height: 100vh; cursor: crosshair; z-index: 5; }
       #toast { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); color: #f2f0e6; font: 26px/1 "Courier New", monospace;
         letter-spacing: 0.15em; text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6); pointer-events: none; }
+      #room { font-size: 15px; margin-top: 8px; opacity: 0.85; }
+      #mp { margin-bottom: 30px; padding: 12px 18px; border: 1px solid rgba(232, 220, 168, 0.25); cursor: default; text-align: center; }
+      #mp input { background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(232, 220, 168, 0.35); color: #e8dca8; font: inherit; padding: 3px 8px; width: 150px; }
+      #mp button { background: #e8dca8; color: #1a160a; border: 0; font: inherit; padding: 4px 12px; cursor: pointer; }
+      #mp .hint { opacity: 0.55; font-size: 13px; margin-top: 6px; }
       #stats { position: fixed; left: 8px; top: 8px; color: #fff8; font: 11px monospace; pointer-events: none; }
     </style>
   </head>
   <body>
     <canvas id="c"></canvas>
     <div id="osd">
-      <div class="tl"><b>●</b> REC</div>
+      <div class="tl"><b>●</b> REC<div id="room"></div></div>
       <div class="tr">SP ▮▮▮▯</div>
       <div class="bl">NOV. 18 1996</div>
       <div class="br" id="tc">0:00:00</div>
@@ -54,6 +59,10 @@
       <h1>THE BACKROOMS</h1>
       <div class="sub">LEVEL 0 · ~600 MILLION SQ. MILES OF RANDOMLY SEGMENTED EMPTY ROOMS</div>
       <div class="go">[ CLICK TO NOCLIP IN ]</div>
+      <form id="mp">
+        <div>MULTIPLAYER &nbsp; room <input id="mpRoom" maxlength="32" placeholder="level-0" /> &nbsp; name <input id="mpName" maxlength="20" /> &nbsp;<button>JOIN</button></div>
+        <div class="hint" id="mpHint">share the room name: everyone in it walks the same Backrooms</div>
+      </form>
       <table>
         <tr><td>look</td><td>mouse</td></tr>
         <tr><td>walk</td><td>W A S D · shift to run</td></tr>

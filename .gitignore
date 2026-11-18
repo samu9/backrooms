@@ -1,6 +1,7 @@
 node_modules
 dist
 .refs
+.claude
 # screenshot iterations stay local; only the curated images are tracked
 shots/*
 !shots/hero-corridor.png
