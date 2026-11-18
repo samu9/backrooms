@@ -1,0 +1,25 @@
+// Smoke run: open the interactive page, enter, walk for a few seconds, report errors and fps.
+import { chromium } from 'playwright';
+import { readdirSync } from 'node:fs';
+const root = process.env.HOME + '/.cache/ms-playwright';
+const exe = readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort().map((d) => `${root}/${d}/chrome-linux64/chrome`).pop();
+const b = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
+const p = await b.newPage({ viewport: { width: 960, height: 540 } });
+const errs = [];
+p.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && !m.text().includes('404') && errs.push(m.text()));
+p.on('pageerror', (e) => errs.push(String(e)));
+await p.goto('http://127.0.0.1:5190/?seed=7');
+await p.waitForTimeout(1500);
+await p.click('#menu');
+await p.keyboard.press('KeyP');
+await p.keyboard.down('KeyW');
+  await p.mouse.move(600, 270);
+await p.keyboard.down('ShiftLeft');
+await p.waitForTimeout(6000);
+await p.keyboard.up('KeyW');
+const stats = await p.textContent('#stats');
+const audio = await p.evaluate(() => typeof AudioContext);
+await p.screenshot({ path: 'shots/smoke.png' });
+console.log('stats:', stats, '| audio api:', audio);
+console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no errors');
+await b.close();
