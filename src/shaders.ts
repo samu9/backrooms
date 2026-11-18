@@ -43,6 +43,7 @@ uniform int uSeed;
 uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform float uQuality;     // 0 low, 1 high
+uniform vec4 uEnt[4];       // entities in the hunt: x, z, active
 varying vec3 vW;
 varying vec3 vN;
 varying vec3 vCol;
@@ -88,6 +89,20 @@ vec4 lightTex(ivec2 li) {
 }
 
 // stuttering fluorescent tube
+// Lights stutter and die around an entity: the darkness travels with it.
+float entDim(vec2 lp, ivec2 li) {
+  float k = 1.0;
+  for (int i = 0; i < 4; i++) {
+    if (uEnt[i].z < 0.5) continue;
+    float d = distance(lp, uEnt[i].xy);
+    if (d > 9.0) continue;
+    float near = smoothstep(9.0, 3.5, d);
+    float s = hash3(li.x, li.y, 90 + int(uTime * 9.0));
+    k *= (s > near * 0.85 ? 1.0 : 0.04) * smoothstep(2.2, 3.6, d);
+  }
+  return k;
+}
+
 float flicker(ivec2 li) {
   float s = hash3(li.x, li.y, 60) * 100.0;
   float t = uTime * (6.0 + 10.0 * hash3(li.x, li.y, 61)) + s;
@@ -214,7 +229,7 @@ bool panel(vec3 p, inout vec3 alb, out vec3 emis) {
     alb = toLin(vec3(0.6, 0.6, 0.56)) * (0.88 + 0.15 * tubes) * prism;
     return true;
   }
-  float inten = k > 2.5 ? flicker(li) : 1.0;
+  float inten = (k > 2.5 ? flicker(li) : 1.0) * entDim((vec2(li) + 0.5) * LP, li);
   float ends = mix(0.75, 1.0, smoothstep(0.58, 0.48, abs(q.x)));
   alb = vec3(0.0);
   emis = lightTint(L.b) * (3.2 + 0.9 * tubes) * ends * prism * inten + vec3(0.08) * inten;
@@ -237,7 +252,7 @@ vec3 lighting(vec3 p, vec3 n, float kind, out float onSum) {
     vec2 hd = abs(lp.xz - p.xz);
     float win = smoothstep(1.5 * LP, 0.9 * LP, max(hd.x, hd.y));
     if (win <= 0.0) continue;
-    float inten = k > 2.5 ? flicker(li) : 1.0;
+    float inten = (k > 2.5 ? flicker(li) : 1.0) * entDim(lp.xz, li);
     vec3 d = lp - p;
     float dist = length(d);
     vec3 l = d / dist;

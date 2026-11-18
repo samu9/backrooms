@@ -3,7 +3,8 @@ import { Soundscape } from './audio';
 import { ChunkManager, makeMaterials, type Shared } from './chunk';
 import { CELL, findFree, freeDistance, rng, setSeed, solid } from './gen';
 import { FullMap, Minimap } from './minimap';
-import { Avatars } from './avatars';
+import { Avatars, ExitDoor } from './avatars';
+import { ENTITY_SPEED, Hunt } from './hunt';
 import { Net } from './net';
 import { Post } from './post';
 
@@ -48,6 +49,7 @@ const shared: Shared = {
   uFogColor: { value: fogColor },
   uFogDensity: { value: num('fog', 0.022) },
   uQuality: { value: num('q', 1) },
+  uEnt: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
 };
 const mats = makeMaterials(shared);
 const chunks = new ChunkManager(scene, mats, shared, num('radius', 2));
@@ -134,7 +136,9 @@ player.pitch = num('pitch', 0);
 const keys = new Set<string>();
 addEventListener('keydown', (e) => {
   if (!fullmap.open) keys.add(e.code);
-  if (e.code === 'KeyN') player.noclip = !player.noclip;
+  if (e.code === 'KeyN' && !hunt.active) player.noclip = !player.noclip;
+  if (e.code === 'KeyR' && started) hunt.requestStart();
+  if (e.code === 'KeyE') hunt.requestPhase();
   if (e.code === 'KeyV') post.final.uniforms.uVhs.value = post.final.uniforms.uVhs.value > 0.5 ? 0 : 1;
   if (e.code === 'KeyH') osd.classList.toggle('hidden');
   if (e.code === 'Tab') {
@@ -179,7 +183,21 @@ function toast(msg: string) {
 minimap.onReached = (m) => toast(`MARK ${m.id} REACHED`);
 
 // ---------- other players ----------
-const avatars = new Avatars(scene, mats.prop, shared as unknown as Record<string, THREE.IUniform>, chunks, (x, z) => audio?.footstep(x, z));
+const avatars = new Avatars(scene, mats.prop, shared as unknown as Record<string, THREE.IUniform>, chunks, (x, z, heavy) => audio?.footstep(x, z, heavy));
+
+// ---------- the hunt ----------
+const hunt = new Hunt(net);
+const exitDoor = new ExitDoor(scene, avatars, mats.prop, shared as unknown as Record<string, THREE.IUniform>);
+hunt.onToast = (m) => toast(m);
+hunt.onTeleport = (x, z) => {
+  player.x = x;
+  player.z = z;
+  player.vx = player.vz = 0;
+};
+hunt.onPhaseEnd = () => {
+  // surfacing inside a wall: step out to the nearest free spot
+  if (collides(player.x, player.z)) [player.x, player.z] = findFree(player.x, player.z, 1);
+};
 const roomEl = document.getElementById('room')!;
 function roomLabel() {
   if (!net) {
@@ -207,7 +225,7 @@ if (net) {
 }
 roomLabel();
 // handle for automated tests (scripts/mptest.mjs)
-(window as unknown as { __game: unknown }).__game = { player, freeDistance, get net() { return net; } };
+(window as unknown as { __game: unknown }).__game = { player, freeDistance, get net() { return net; }, get hunt() { return hunt; } };
 if (netError) setTimeout(() => toast('RELAY UNREACHABLE · ALONE'), 500);
 function toggleFullMap() {
   if (fullmap.open) closeFullMap(true);
@@ -283,11 +301,14 @@ function step(dt: number) {
   if (keys.has('KeyS') || keys.has('ArrowDown')) iz += 1;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) ix -= 1;
   if (keys.has('KeyD') || keys.has('ArrowRight')) ix += 1;
+  if (hunt.frozen) ix = iz = 0;
   const input = ix !== 0 || iz !== 0;
-  // sprint builds up over ~half a second and dies off faster; only really works going forward
-  const wantRun = input && iz <= 0 && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
+  // sprint builds up over ~half a second and dies off faster; only really works going forward.
+  // In a hunt, wanderers burn stamina and the entity never runs: it doesn't need to.
+  const wantRun = hunt.sprintGate(input && iz <= 0 && (keys.has('ShiftLeft') || keys.has('ShiftRight')), Math.hypot(player.vx, player.vz), dt) && !hunt.isEntity;
   player.sprint += ((wantRun ? 1 : 0) - player.sprint) * (1 - Math.exp(-dt * (wantRun ? 2.6 : 5)));
-  let speed = player.noclip ? 7 : WALK + (RUN - WALK) * player.sprint;
+  const ghost = player.noclip || hunt.phasing;
+  let speed = player.noclip ? 7 : hunt.isEntity ? ENTITY_SPEED : WALK + (RUN - WALK) * player.sprint;
   if (iz > 0) speed *= 0.65; // backpedalling
   else if (iz === 0 && ix !== 0) speed *= 0.85; // pure strafe
   const il = Math.hypot(ix, iz) || 1;
@@ -307,10 +328,10 @@ function step(dt: number) {
     const ox = player.x,
       oz = player.z;
     const nx = player.x + (player.vx * dt) / n;
-    if (player.noclip || !collides(nx, player.z)) player.x = nx;
+    if (ghost || !collides(nx, player.z)) player.x = nx;
     else player.vx *= 0.2; // slide along the wall instead of stopping dead
     const nz = player.z + (player.vz * dt) / n;
-    if (player.noclip || !collides(player.x, nz)) player.z = nz;
+    if (ghost || !collides(player.x, nz)) player.z = nz;
     else player.vz *= 0.2;
     travelled += Math.hypot(player.x - ox, player.z - oz);
   }
@@ -346,7 +367,7 @@ function step(dt: number) {
 }
 
 function frame(now: number) {
-  const dt = Math.min(0.1, (now - last) / 1000);
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
   last = now;
   if (!SHOT) time += dt;
   shared.uTime.value = time % 4096;
@@ -355,10 +376,40 @@ function frame(now: number) {
   minimap.reveal(player.x, player.z, dt, SHOT);
   minimap.checkReached(player.x, player.z);
   if (net) {
-    net.sendPose(player.x, player.z, player.yaw, player.pitch, moving);
+    hunt.update(dt);
+    if (hunt.active) player.noclip = false;
+    net.sendPose(player.x, player.z, player.yaw, player.pitch, moving, hunt.flags);
     net.sample();
-    avatars.update(net.peers.values(), player.x, player.z);
-    minimap.others = [...net.peers.values()].filter((p) => p.visible);
+    const isEnt = (id: number) => hunt.active && hunt.roleOf(id) === 'entity';
+    avatars.update(net.peers.values(), player.x, player.z, isEnt);
+    // in a hunt you only see your own side on the maps; wanderers also see the exit
+    const mine = hunt.myRole === 'entity';
+    minimap.others = [...net.peers.values()].filter((p) => p.visible && (!hunt.active || isEnt(p.id) === mine));
+    minimap.exit = hunt.active && !mine ? hunt.exit : null;
+    exitDoor.update(hunt.active ? hunt.exit : null);
+    // entities kill the lights around them (theirs and ours)
+    const ents = [...net.peers.values()].filter((p) => p.visible && isEnt(p.id)).map((p) => [p.x, p.z]);
+    if (hunt.isEntity) ents.unshift([player.x, player.z]);
+    shared.uEnt.value.forEach((v, i) => (ents[i] ? v.set(ents[i][0], ents[i][1], 1, 0) : v.set(0, 0, 0, 0)));
+    // dread: the tape fails as an entity closes in on a wanderer
+    let near = Infinity;
+    for (const [x, z] of ents) if (!hunt.isEntity) near = Math.min(near, Math.hypot(x - player.x, z - player.z));
+    const fu = post.final.uniforms;
+    const dread = hunt.isWanderer && hunt.phase === 'hunt' ? Math.max(0, Math.min(1, (14 - near) / 12)) : 0;
+    fu.uDread.value += (dread - fu.uDread.value) * Math.min(1, dt * 3);
+    fu.uHunter.value += ((hunt.isEntity ? 1 : 0) - fu.uHunter.value) * Math.min(1, dt * 2);
+    fu.uGlitch.value = Math.max(Math.min(1, hunt.caughtFx / 1.2), hunt.phasing ? 0.3 : 0);
+    if (audio) {
+      audio.hunterEars = hunt.isEntity;
+      if (hunt.active)
+        for (const p of net.peers.values()) {
+          if (!p.visible) continue;
+          if (isEnt(p.id)) audio.presence('ent:' + p.id, 'entity', p.x, p.z);
+          else if (p.f & 1) audio.presence('br:' + p.id, 'breath', p.x, p.z);
+        }
+      audio.endFrame();
+      audio.ownBreath(hunt.isWanderer ? Math.max(0, 1 - hunt.stamina / 3) : 0);
+    }
   }
   fullmap.draw(player.x, player.z, player.yaw, dt);
   const tgt = minimap.target;

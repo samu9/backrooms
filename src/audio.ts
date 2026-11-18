@@ -257,8 +257,137 @@ export class Soundscape {
   }
 
   /** Someone else's footstep at (x, z). */
-  footstep(x: number, z: number) {
-    this.thump({ x, y: 0.1, z }, 0.32, 0.16, 420, true);
+  footstep(x: number, z: number, heavy = false) {
+    const g = this.hunterEars ? 1.8 : 1;
+    if (heavy) this.thump({ x, y: 0.1, z }, 0.7, 0.32, 200, true); // an entity's step: slow, too heavy
+    else this.thump({ x, y: 0.1, z }, 0.32 * g, 0.16, 420, true);
+  }
+
+  // ---------- the hunt ----------
+  /** As an entity you hear the living better. */
+  hunterEars = false;
+  private loops = new Map<string, { panner: PannerNode; gain: GainNode; stop: () => void; seen: boolean }>();
+  private ownBreathGain: GainNode | null = null;
+
+  private noiseSrc() {
+    const n = this.ctx.createBufferSource();
+    n.buffer = this.noise;
+    n.loop = true;
+    n.start(0, Math.random() * 1.5);
+    return n;
+  }
+
+  /** Panting: band-passed noise with a breathing rhythm. */
+  private breathVoice(out: AudioNode) {
+    const c = this.ctx;
+    const n = this.noiseSrc();
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1100;
+    bp.Q.value = 1.4;
+    const amp = c.createGain();
+    amp.gain.value = 0.5;
+    const lfo = c.createOscillator();
+    lfo.frequency.value = 1.1 + Math.random() * 0.3;
+    const lg = c.createGain();
+    lg.gain.value = 0.5;
+    lfo.connect(lg).connect(amp.gain);
+    lfo.start();
+    n.connect(bp).connect(amp).connect(out);
+    return () => {
+      n.stop();
+      lfo.stop();
+    };
+  }
+
+  /** The entity's presence: a low detuned drone with a slow, uneven tremolo. */
+  private entityVoice(out: AudioNode) {
+    const c = this.ctx;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 340;
+    lp.Q.value = 4;
+    const amp = c.createGain();
+    amp.gain.value = 0.6;
+    const oscs = [43.6, 44.1, 65.2].map((f) => {
+      const o = c.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = f;
+      o.connect(lp);
+      o.start();
+      return o;
+    });
+    const n = this.noiseSrc();
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 160;
+    bp.Q.value = 3;
+    n.connect(bp).connect(lp);
+    const lfo = c.createOscillator();
+    lfo.frequency.value = 0.37;
+    const lg = c.createGain();
+    lg.gain.value = 0.35;
+    lfo.connect(lg).connect(amp.gain);
+    lfo.start();
+    lp.connect(amp).connect(out);
+    return () => {
+      oscs.forEach((o) => o.stop());
+      n.stop();
+      lfo.stop();
+    };
+  }
+
+  /** Keep a positional loop alive at (x, z) this frame; loops not refreshed by endFrame() fade out. */
+  presence(key: string, kind: 'entity' | 'breath', x: number, z: number, level = 1) {
+    let l = this.loops.get(key);
+    const c = this.ctx;
+    if (!l) {
+      const panner = c.createPanner();
+      panner.panningModel = 'HRTF';
+      panner.distanceModel = 'inverse';
+      panner.refDistance = kind === 'entity' ? 3 : 1.2;
+      panner.rolloffFactor = kind === 'entity' ? 0.9 : 1.6;
+      const gain = c.createGain();
+      gain.gain.value = 0;
+      gain.connect(panner);
+      panner.connect(this.dry);
+      const send = c.createGain();
+      send.gain.value = 0.5;
+      panner.connect(send).connect(this.wet);
+      const stop = kind === 'entity' ? this.entityVoice(gain) : this.breathVoice(gain);
+      l = { panner, gain, stop, seen: true };
+      this.loops.set(key, l);
+    }
+    l.seen = true;
+    const t = c.currentTime;
+    l.panner.positionX.setTargetAtTime(x, t, 0.05);
+    l.panner.positionY.setTargetAtTime(kind === 'entity' ? 1.8 : 1.5, t, 0.05);
+    l.panner.positionZ.setTargetAtTime(z, t, 0.05);
+    const base = kind === 'entity' ? 0.5 : 0.18 * (this.hunterEars ? 2.2 : 1);
+    l.gain.gain.setTargetAtTime(base * level, t, 0.15);
+  }
+
+  /** Call once per frame after all presence() calls. */
+  endFrame() {
+    for (const [k, l] of this.loops) {
+      if (!l.seen) {
+        l.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
+        const dead = l;
+        setTimeout(() => dead.stop(), 1500);
+        this.loops.delete(k);
+      } else l.seen = false;
+    }
+  }
+
+  /** Our own breathing, 0 = calm, 1 = out of breath. */
+  ownBreath(level: number) {
+    if (!this.ownBreathGain) {
+      this.ownBreathGain = this.ctx.createGain();
+      this.ownBreathGain.gain.value = 0;
+      this.ownBreathGain.connect(this.dry);
+      this.breathVoice(this.ownBreathGain);
+    }
+    this.ownBreathGain.gain.setTargetAtTime(0.09 * level, this.ctx.currentTime, 0.4);
   }
 
   private thump(p: V3, amp: number, dur: number, cutoff: number, spatial = true, at = this.ctx.currentTime) {

@@ -14,6 +14,7 @@ interface Snap {
   yaw: number;
   pitch: number;
   v: number;
+  f: number;
 }
 
 export interface Peer extends PeerInfo {
@@ -24,6 +25,8 @@ export interface Peer extends PeerInfo {
   yaw: number;
   pitch: number;
   v: number;
+  /** flags from the latest snapshot: 1 = out of breath, 2 = phasing */
+  f: number;
   visible: boolean;
 }
 
@@ -38,6 +41,8 @@ export class Net {
   onJoin: (p: Peer) => void = () => {};
   onLeave: (p: Peer) => void = () => {};
   onClose: () => void = () => {};
+  /** game messages (round, caught, escaped, phase, teleport) */
+  onGame: (m: Record<string, unknown>) => void = () => {};
   private lastSend = 0;
 
   static url(): string {
@@ -98,6 +103,13 @@ export class Net {
             }
             break;
           }
+          case 'round':
+          case 'caught':
+          case 'escaped':
+          case 'phase':
+          case 'teleport':
+            this.onGame(m);
+            break;
           case 'poses':
             for (const [id, ...pose] of m.p as number[][]) {
               const p = this.peers.get(id);
@@ -110,13 +122,13 @@ export class Net {
   }
 
   private add(info: PeerInfo): Peer {
-    const p: Peer = { id: info.id, name: info.name, color: info.color, snaps: [], x: 0, z: 0, yaw: 0, pitch: 0, v: 0, visible: false };
+    const p: Peer = { id: info.id, name: info.name, color: info.color, snaps: [], x: 0, z: 0, yaw: 0, pitch: 0, v: 0, f: 0, visible: false };
     this.peers.set(p.id, p);
     return p;
   }
 
-  private push(p: Peer, [x, z, yaw, pitch, v]: number[]) {
-    p.snaps.push({ t: performance.now(), x, z, yaw, pitch, v });
+  private push(p: Peer, [x, z, yaw, pitch, v, f = 0]: number[]) {
+    p.snaps.push({ t: performance.now(), x, z, yaw, pitch, v, f });
     if (p.snaps.length > 30) p.snaps.shift();
   }
 
@@ -124,11 +136,15 @@ export class Net {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
-  sendPose(x: number, z: number, yaw: number, pitch: number, v: number) {
+  send(msg: Record<string, unknown>) {
+    if (this.connected) this.ws!.send(JSON.stringify(msg));
+  }
+
+  sendPose(x: number, z: number, yaw: number, pitch: number, v: number, f = 0) {
     const now = performance.now();
     if (!this.connected || now - this.lastSend < SEND_MS) return;
     this.lastSend = now;
-    this.ws!.send(JSON.stringify({ t: 'pose', x: +x.toFixed(3), z: +z.toFixed(3), yaw: +yaw.toFixed(3), pitch: +pitch.toFixed(3), v: +v.toFixed(2) }));
+    this.ws!.send(JSON.stringify({ t: 'pose', x: +x.toFixed(3), z: +z.toFixed(3), yaw: +yaw.toFixed(3), pitch: +pitch.toFixed(3), v: +v.toFixed(2), f }));
   }
 
   /** Interpolate every peer at (now - DELAY). */
@@ -154,6 +170,7 @@ export class Net {
       p.yaw = a.yaw + dy * k;
       p.pitch = a.pitch + (b.pitch - a.pitch) * k;
       p.v = a.v + (b.v - a.v) * k;
+      p.f = b.f;
     }
   }
 }
