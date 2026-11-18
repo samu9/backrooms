@@ -1,0 +1,12 @@
+node_modules
+dist
+.refs
+# screenshot iterations stay local; only the curated images are tracked
+shots/*
+!shots/hero-corridor.png
+!shots/hero-hall.png
+!shots/map-full.png
+!shots/map-mini.png
+!shots/final/
+shots/final/*
+!shots/final/sheet.png
