@@ -27,6 +27,8 @@ export class Hunt {
   phaseReadyAt = 0;
   /** remote entities currently phasing: id -> until */
   remotePhase = new Map<number, number>();
+  /** single player against the CPU (only changes some wording) */
+  solo = false;
   /** seconds of "you were caught" glitch left */
   caughtFx = 0;
 
@@ -93,7 +95,7 @@ export class Hunt {
         if (id === this.myId) {
           this.caughtFx = 2.2;
           this.phaseReadyAt = now + PHASE_COOLDOWN_MS;
-          this.banner('FOUND', 'you are one of them now. hunt the others.', 5);
+          this.banner('FOUND', this.solo ? 'it was right behind you.' : 'you are one of them now. hunt the others.', 5);
         } else this.onToast(`${this.name(id)} WAS FOUND`);
         break;
       }
@@ -174,7 +176,7 @@ export class Hunt {
 
   private endScreen() {
     const w = this.winner;
-    if (w === 'entity') this.banner('NO ONE GOT OUT', 'the entity found everyone', 9);
+    if (w === 'entity') this.banner(this.solo ? 'IT FOUND YOU' : 'NO ONE GOT OUT', this.solo ? 'in a moment, R to try again' : 'the entity found everyone', 9);
     else if (w === 'wanderers') {
       const out = [...this.roles.entries()].filter(([, r]) => r === 'escaped' || r === 'wanderer').map(([id]) => (id === this.myId ? 'YOU' : this.name(id)));
       this.banner('SOMEONE GOT OUT', out.join(', ') + (out.length === 1 ? ' survived' : ' survived'), 9);

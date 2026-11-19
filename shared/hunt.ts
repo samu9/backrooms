@@ -57,21 +57,35 @@ function lineOfSight(ax: number, az: number, bx: number, bz: number): boolean {
 }
 
 /** Start a round: pick the entity, place it and the exit away from everyone else. */
-export function startRound(r: RoundState, players: Hunter[], seed: number, now: number, rand = Math.random): Event[] {
+export interface Layout {
+  /** entity spawn distance from the wanderers, metres [min, max] */
+  entity: [number, number];
+  /** exit distance from the wanderers, metres [min, max] */
+  exit: [number, number];
+}
+/** Multiplayer: the entity is a person and the wanderers help each other. */
+export const LAYOUT_ROOM: Layout = { entity: [30, 40], exit: [70, 100] };
+/** Single player: alone against the CPU, the way out is further. */
+export const LAYOUT_SOLO: Layout = { entity: [35, 45], exit: [130, 170] };
+
+export function startRound(r: RoundState, players: Hunter[], seed: number, now: number, rand = Math.random, layout: Layout = LAYOUT_ROOM): Event[] {
   setSeed(seed);
-  const placed = players.filter((p) => p.pose);
+  const entity = players[Math.floor(rand() * players.length)];
+  // distances are measured from the wanderers (where the entity was standing doesn't matter)
+  const placed = players.filter((p) => p.pose && p !== entity);
   const cx = placed.reduce((s, p) => s + p.pose![0], 0) / Math.max(1, placed.length);
   const cz = placed.reduce((s, p) => s + p.pose![1], 0) / Math.max(1, placed.length);
-  const entity = players[Math.floor(rand() * players.length)];
   for (const p of players) {
     p.role = p === entity ? 'entity' : 'wanderer';
     p.phaseReadyAt = now + COUNTDOWN_S * 1000; // no phasing during the countdown
   }
-  // the entity starts out of sight, 30-40 m away; the exit 70-100 m away in another direction
+  // the entity starts out of sight; the exit lies further away, in another direction
   const a = rand() * Math.PI * 2;
-  const [ex, ez] = findFree(cx + Math.cos(a) * (30 + rand() * 10), cz + Math.sin(a) * (30 + rand() * 10), 2);
+  const de = layout.entity[0] + rand() * (layout.entity[1] - layout.entity[0]);
+  const [ex, ez] = findFree(cx + Math.cos(a) * de, cz + Math.sin(a) * de, 2);
   const b = a + Math.PI * (0.6 + rand() * 0.8);
-  const [xx, xz] = findFree(cx + Math.cos(b) * (70 + rand() * 30), cz + Math.sin(b) * (70 + rand() * 30), 2);
+  const dx = layout.exit[0] + rand() * (layout.exit[1] - layout.exit[0]);
+  const [xx, xz] = findFree(cx + Math.cos(b) * dx, cz + Math.sin(b) * dx, 2);
   r.phase = 'countdown';
   r.endsAt = now + COUNTDOWN_S * 1000;
   r.exit = { x: xx, z: xz };
