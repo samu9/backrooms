@@ -1,6 +1,6 @@
-// Golden fixtures for the generator: what shared/gen.ts answers for a fixed set of questions.
-// The C# port (godot/Core) is tested against this file, so both clients and the relay generate
-// the same world cell for cell.
+// Golden fixtures for the generator: what shared/gen.ts answers for a fixed set of questions, and
+// what the web client's buildChunk makes from it. The C# port (godot/Core) is tested against this
+// file, so both clients and the relay generate the same world cell for cell.
 //
 //   npm run gen:fixtures       # rewrites tests/fixtures/gen-golden.json.gz
 //
@@ -8,6 +8,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { dirname, resolve } from 'node:path';
+import { build } from 'rolldown';
 import { ceilingAt, findFree, freeDistance, hash3, lightKind, rng, setSeed, solid, zoneAt } from '../../shared/gen.ts';
 
 const OUT = resolve(import.meta.dirname, '../fixtures/gen-golden.json.gz');
@@ -119,7 +120,66 @@ const seeds = SEEDS.map((seed) => {
   return { seed, hashes, heights, windows, zones, lights: { i0, j0, n: L, kinds: b64(kinds) }, findFree: free, freeDistance: dist, rng: rngs };
 });
 
-const json = JSON.stringify({ version: 1, source: 'shared/gen.ts', seeds });
+// ---- chunks: what the web client's buildChunk makes (textures in full, geometry as hashes) ----
+// web/src imports without extensions, so bundle it (with three) and import the bundle.
+const bundle = await build({ input: resolve(import.meta.dirname, 'chunk-entry.mjs'), write: false, platform: 'node', output: { format: 'esm' }, logLevel: 'silent' });
+const web = await import('data:text/javascript;base64,' + Buffer.from(bundle.output[0].code).toString('base64'));
+
+/** FNV-1a over the bytes, 32 bit: compact, and the same in C#. */
+const fnv = (bytes: Uint8Array) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193);
+  return h >>> 0;
+};
+const f32hash = (a: ArrayLike<number>) => fnv(new Uint8Array(new Float32Array(a as ArrayLike<number>).buffer));
+
+const sharedU = {
+  uTime: { value: 0 },
+  uSeed: { value: 0 },
+  uFogColor: { value: null },
+  uFogDensity: { value: 0 },
+  uQuality: { value: 1 },
+  uEnt: { value: [] },
+};
+const mats = web.makeMaterials(sharedU);
+const CHUNKS: [number, number][] = [
+  [0, 0],
+  [-1, -1],
+  [3, -2],
+  [-40, 77],
+];
+const chunks = [1, -1000].flatMap((seed) => {
+  web.setSeed(seed);
+  return CHUNKS.map(([ci, cj]) => {
+    const c = web.buildChunk(ci, cj, mats, sharedU);
+    const geo = c.group.children[0].geometry;
+    const attr = (k: string) => geo.getAttribute(k).array as Float32Array;
+    const idx = Uint32Array.from(geo.index.array as ArrayLike<number>);
+    const out = {
+      seed,
+      ci,
+      cj,
+      lightBase: [c.env.lbase.x, c.env.lbase.y],
+      occ: b64(c.env.occ.image.data),
+      lights: b64(c.env.lights.image.data),
+      lightList: c.lights.map((l: { x: number; z: number; y: number; kind: number }) => [l.x, l.z, l.y, l.kind]),
+      vertices: attr('position').length / 3,
+      indices: idx.length,
+      hash: {
+        position: f32hash(attr('position')),
+        normal: f32hash(attr('normal')),
+        aCol: f32hash(attr('aCol')),
+        aA: f32hash(attr('aA')),
+        aB: f32hash(attr('aB')),
+        index: fnv(new Uint8Array(idx.buffer)),
+      },
+    };
+    c.dispose();
+    return out;
+  });
+});
+
+const json = JSON.stringify({ version: 2, source: 'shared/gen.ts, web/src/chunk.ts', seeds, chunks });
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, gzipSync(json, { level: 9 }));
 console.log(`${OUT}: ${(json.length / 1024).toFixed(0)} KB json, ${seeds.length} seeds`);
