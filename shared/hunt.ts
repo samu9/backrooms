@@ -4,7 +4,7 @@
 // Shared by the relay (multiplayer) and the browser (single player, src/localnet.ts).
 // The referee assigns roles, places the exit, and decides catches and escapes
 // from the positions players report, checking line of sight with the same solid() the game uses.
-import { CELL, findFree, setSeed, solid } from '../src/gen.ts';
+import { CELL, findFree, setSeed, solid } from './gen.ts';
 
 export type Role = 'none' | 'wanderer' | 'entity' | 'escaped';
 export type Phase = 'lobby' | 'countdown' | 'hunt' | 'end';

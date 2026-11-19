@@ -64,7 +64,7 @@ shortens rounds for testing.
 
 **PLAY ALONE** in the menu (`?solo=easy|normal|nightmare`) runs the hunt in single player. No
 relay is needed: the same rules (`shared/hunt.ts`) run in the page, and the Entity is a CPU
-(`src/ai/`). It doesn't know where you are. It has to find you:
+(`web/src/ai/`). It doesn't know where you are. It has to find you:
 
 - **Sight:** a 110° cone. Range is shorter in dead zones (24 m lit / 7 m dark on Normal), so the
   dark is where you hide. Walls block it, and a detection meter takes a moment to fill, so a
@@ -84,6 +84,22 @@ wanderer that walks to the exit and sprints when it sees the Entity coming. Curr
 30 rounds each: Easy catches it 10% of the time, Normal 33%, Nightmare 87%. A real player can
 also hide, so treat these as a relative scale.
 
+## Repository layout
+
+| Folder | What |
+|---|---|
+| `shared/` | The world generator (`gen.ts`) and the hunt rules (`hunt.ts`). Used by the web client, the relay and the tests. |
+| `web/` | The browser client: `web/src/` (three.js), `web/index.html`, `web/vite.config.ts`, and the Playwright scripts in `web/scripts/`. Builds to the root `dist/`. |
+| `server/` | The multiplayer relay and hunt referee. Serves `dist/` too. |
+| `tests/` | Node tests for the rules and the CPU entity (`npm test`, `npm run sim`). |
+| `scripts/` | Builds `docs/layout-algorithm.html` from `shared/gen.ts` (`npm run doc`). |
+| `docs/` | Explainers and plans, including the [Godot port plan](docs/godot-port-plan.html). |
+
+A desktop client in Godot (C#) is planned under `godot/`, next to the web one. It will play in the
+same rooms through the same relay.
+
+The npm scripts need Node 22.6 or newer, because the server and tests run `.ts` files directly.
+
 ## How it works
 
 Stack: three.js on WebGL2, hand-written GLSL, Web Audio, Vite + TypeScript (the same approach as
@@ -91,26 +107,26 @@ Synthwave City), plus Playwright for screenshots.
 
 | Piece | File | Notes |
 |---|---|---|
-| Layout | `src/gen.ts` | A pure function of `(seed, cell)`, with 0.5 m cells. Warped zones (office, maze, corridor, pillar hall, weird, void) each have their own wall spacing, door odds, ceiling height and chair rail. Chunks can be built in any order and their edges always match. |
-| Chunks | `src/chunk.ts` | Chunks are 32 m. Each one is a single floor quad, greedy-merged ceilings and walls (soffits where ceiling heights change), a 96×96 occupancy/height texture with a 16-cell border, and a 16×16 light-state texture. That makes 2 draw calls per chunk, about 30 draw calls and about 30k triangles per frame. Chunks are streamed around the player within a time budget. |
-| Lighting | `src/shaders.ts` | Lighting is computed per pixel from the 4×4 nearest ceiling panels. Soft wall shadows are ray-marched through the occupancy texture, and ambient occlusion is read from the same texture. Some panels are dead, some flicker, and there are dark blocks. No shadow maps, no lightmaps. |
-| Materials | `src/shaders.ts` | Procedural wallpaper (column lines, chevrons, seams, grime, water stains), carpet, 2×4 ft acoustic tiles and prismatic light panels. Fine detail fades out based on how much of the surface each pixel covers, so it doesn't shimmer (moiré). |
-| Props | `src/props.ts` | Furniture is built from boxes. A prop can be half-rendered (wireframe above a moving "streaming" edge, plain untextured grey below it), merged into the surface it touches (its colour turns into carpet, wallpaper or ceiling tile), or covered in wallpaper. Also: doors leading nowhere and stairs into the ceiling. |
-| Post | `src/post.ts` | HDR + MSAA, two-level bloom, ACES tone mapping, yellow/olive grade, composite-video chroma bleed, chromatic aberration, tape jitter, grain, vignette. Resolution scales automatically to keep the frame time under about 18 ms. |
-| CPU entity | `src/ai/path.ts`, `src/ai/entity.ts`, `src/localnet.ts` | A* with phase-aware wall costs and string-pulling; senses, state machine and director; an in-page stand-in for the relay. |
-| The Hunt | `shared/hunt.ts`, `src/hunt.ts` | Server-side round state machine and referee; client stamina, phasing, HUD, light-killing entities (shader uniform), dread grade, positional drone/breathing. |
-| Multiplayer | `server/server.ts`, `src/net.ts`, `src/avatars.ts` | WebSocket relay with rooms (max 16), one pose batch per room per tick, snapshot interpolation on the client. Avatars are lit with the prop shader and the textures of the chunk they stand in. |
-| Sound | `src/audio.ts` | Hum from the mains and the ballasts. The nearest panels buzz as HRTF-positioned sources, and the flickering ones crackle. Random events through a synthetic reverb: footsteps that aren't yours, knocking inside walls, distant slams, drones, creaks, and breathing behind you. |
+| Layout | `shared/gen.ts` | A pure function of `(seed, cell)`, with 0.5 m cells. Warped zones (office, maze, corridor, pillar hall, weird, void) each have their own wall spacing, door odds, ceiling height and chair rail. Chunks can be built in any order and their edges always match. |
+| Chunks | `web/src/chunk.ts` | Chunks are 32 m. Each one is a single floor quad, greedy-merged ceilings and walls (soffits where ceiling heights change), a 96×96 occupancy/height texture with a 16-cell border, and a 16×16 light-state texture. That makes 2 draw calls per chunk, about 30 draw calls and about 30k triangles per frame. Chunks are streamed around the player within a time budget. |
+| Lighting | `web/src/shaders.ts` | Lighting is computed per pixel from the 4×4 nearest ceiling panels. Soft wall shadows are ray-marched through the occupancy texture, and ambient occlusion is read from the same texture. Some panels are dead, some flicker, and there are dark blocks. No shadow maps, no lightmaps. |
+| Materials | `web/src/shaders.ts` | Procedural wallpaper (column lines, chevrons, seams, grime, water stains), carpet, 2×4 ft acoustic tiles and prismatic light panels. Fine detail fades out based on how much of the surface each pixel covers, so it doesn't shimmer (moiré). |
+| Props | `web/src/props.ts` | Furniture is built from boxes. A prop can be half-rendered (wireframe above a moving "streaming" edge, plain untextured grey below it), merged into the surface it touches (its colour turns into carpet, wallpaper or ceiling tile), or covered in wallpaper. Also: doors leading nowhere and stairs into the ceiling. |
+| Post | `web/src/post.ts` | HDR + MSAA, two-level bloom, ACES tone mapping, yellow/olive grade, composite-video chroma bleed, chromatic aberration, tape jitter, grain, vignette. Resolution scales automatically to keep the frame time under about 18 ms. |
+| CPU entity | `web/src/ai/path.ts`, `web/src/ai/entity.ts`, `web/src/localnet.ts` | A* with phase-aware wall costs and string-pulling; senses, state machine and director; an in-page stand-in for the relay. |
+| The Hunt | `shared/hunt.ts`, `web/src/hunt.ts` | Server-side round state machine and referee; client stamina, phasing, HUD, light-killing entities (shader uniform), dread grade, positional drone/breathing. |
+| Multiplayer | `server/server.ts`, `web/src/net.ts`, `web/src/avatars.ts` | WebSocket relay with rooms (max 16), one pose batch per room per tick, snapshot interpolation on the client. Avatars are lit with the prop shader and the textures of the chunk they stand in. |
+| Sound | `web/src/audio.ts` | Hum from the mains and the ballasts. The nearest panels buzz as HRTF-positioned sources, and the flickering ones crackle. Random events through a synthetic reverb: footsteps that aren't yours, knocking inside walls, distant slams, drones, creaks, and breathing behind you. |
 
 ## Screenshots
 
 ```bash
 npm run dev &
-node scripts/shot.mjs --out shots/x --views 0,1,2          # auto viewpoints with long sight lines
-node scripts/shot.mjs --out shots/x --views "prop=3&pname=door"
-node scripts/sheet.mjs shots/x/sheet.png shots/x/*.png     # contact sheet
-node scripts/smoke.mjs                                      # interactive run, errors + stats
-node scripts/mptest.mjs                                     # two players in one room (needs npm run server)
-node scripts/hunttest.mjs                                   # a full hunt round with two players
-node scripts/solotest.mjs                                   # single player vs the CPU, end to end
+node web/scripts/shot.mjs --out shots/x --views 0,1,2          # auto viewpoints with long sight lines
+node web/scripts/shot.mjs --out shots/x --views "prop=3&pname=door"
+node web/scripts/sheet.mjs shots/x/sheet.png shots/x/*.png     # contact sheet
+node web/scripts/smoke.mjs                                      # interactive run, errors + stats
+node web/scripts/mptest.mjs                                     # two players in one room (needs npm run server)
+node web/scripts/hunttest.mjs                                   # a full hunt round with two players
+node web/scripts/solotest.mjs                                   # single player vs the CPU, end to end
 ```

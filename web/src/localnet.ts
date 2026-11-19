@@ -1,7 +1,7 @@
 // Single player: a stand-in for the relay that runs the same hunt rules (shared/hunt.ts) in the
 // page, with one extra "peer" whose pose comes from the CPU entity instead of the network. Main,
 // the HUD, the avatars and the audio can't tell the difference.
-import { type Event, type Hunter, LAYOUT_SOLO, type RoundState, newRound, startRound, tickRound, tryPhase } from '../shared/hunt.ts';
+import { type Event, type Hunter, LAYOUT_SOLO, type RoundState, newRound, startRound, tickRound, tryPhase } from '../../shared/hunt.ts';
 import { type Difficulty, EntityAI } from './ai/entity.ts';
 import { useSeed } from './ai/path.ts';
 import { Net, type Peer } from './net.ts';

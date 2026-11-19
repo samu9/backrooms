@@ -4,7 +4,7 @@
 // into roaming, investigating, chasing and searching; a "director" paces the tension so it
 // neither loses you forever nor hounds you without a breather. No access to your position
 // except through those senses, a short grace after losing sight, and the director's vague hints.
-import { CELL, LIGHT_PERIOD, findFree, lightKind } from '../gen.ts';
+import { CELL, LIGHT_PERIOD, findFree, lightKind } from '../../../shared/gen.ts';
 import { type Waypoint, clearLine, findPath, wallAt } from './path.ts';
 
 export type Difficulty = 'easy' | 'normal' | 'nightmare';

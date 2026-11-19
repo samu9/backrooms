@@ -4,7 +4,7 @@
 //   - a 96x96 occupancy/height texture (chunk + 16-cell border) used for soft shadows and AO
 //   - a 16x16 light-state texture for the ceiling-panel lattice that covers it
 import * as THREE from 'three';
-import { BORDER, CELL, CHUNK, CHUNK_CELLS, H_SCALE, LIGHT_PERIOD, TEX, ceilingAt, hash3, zoneAt, lightKind, solid } from './gen';
+import { BORDER, CELL, CHUNK, CHUNK_CELLS, H_SCALE, LIGHT_PERIOD, TEX, ceilingAt, hash3, zoneAt, lightKind, solid } from '../../shared/gen';
 import { GeoBuilder, buildProps, type PropSpot } from './props';
 import { levelFragment, levelVertex } from './shaders';
 
