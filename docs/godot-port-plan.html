@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Plan: Godot (C#) port alongside the web version</title>
+<style>
+  :root {
+    --bg: #faf7ec; --fg: #2a2617; --mute: #6f6850; --card: #fffdf5; --line: #e2dcc4;
+    --accent: #b8860b; --accent2: #c0392b; --ok: #3d8b3d; --code: #f2edd9;
+    --web: #2f7fb8; --godot: #478cbf; --cs: #7b4fbf; --ts: #b8860b; --srv: #3d8b3d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15130c; --fg: #ece5c8; --mute: #a39b7c; --card: #1d1a10; --line: #353020; --accent: #e0b84a; --accent2: #ff6b5b; --ok: #6cc46c; --code: #26221a; --cs: #a98be0; --ts: #e0b84a; --srv: #6cc46c; --web: #5aaee0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 32px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 23px; margin: 44px 0 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 22px 0 6px; }
+  .sub { color: var(--mute); margin: 0 0 22px; }
+  code, pre { font: 13.5px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace; background: var(--code); border-radius: 4px; }
+  code { padding: 1px 5px; }
+  pre { padding: 12px 14px; overflow-x: auto; margin: 8px 0; }
+  a { color: var(--accent); }
+  .tldr { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 14px 18px; }
+  .tldr ul { margin: 6px 0 0; padding-left: 20px; }
+  nav.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 18px 0 0; font-size: 14px; }
+  nav.toc a { text-decoration: none; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; margin: 10px 0; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--card); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
+  .card h3 { margin-top: 4px; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid currentColor; margin-right: 4px; white-space: nowrap; }
+  .t-easy { color: var(--ok); } .t-med { color: var(--accent); } .t-hard { color: var(--accent2); }
+  .ms { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; margin: 16px 0; }
+  .ms h3 { margin: 0 0 4px; }
+  .ms .exit { font-size: 14px; color: var(--mute); }
+  .ms .exit b { color: var(--fg); }
+  details { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; margin: 10px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  .warn { border-left: 4px solid var(--accent2); }
+  svg text { font-family: system-ui, sans-serif; fill: var(--fg); }
+  .q { background: var(--card); border: 1px dashed var(--accent); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+  .q b { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Plan: a Godot (C#) port alongside the web version</h1>
+<p class="sub">The Backrooms, Level 0 · branch <code>worktree-godot-port-plan</code> · 2026-11-19 · plan only, nothing implemented yet</p>
+
+<div class="tldr">
+<b>TL;DR</b>
+<ul>
+  <li>One repo, three clients of the same world: <b>web</b> (three.js, unchanged behaviour), <b>godot</b> (C#, desktop, installed) and the <b>relay server</b> (unchanged).</li>
+  <li>The world is a pure function of the seed, and the relay decides catches with the TypeScript <code>solid()</code>. So the C# generator must give the <b>same output as the TypeScript one, bit for bit</b>. <code>shared/gen.ts</code> stays the <b>source of truth</b>. A TS script dumps <b>golden fixtures</b>, and a plain <code>dotnet test</code> checks the C# port against them.</li>
+  <li>C# is split in two: <b>Backrooms.Core</b> (no Godot dependency: generation, chunk data, hunt rules, A*, entity AI, protocol) and <b>Backrooms.Game</b> (Godot: meshes, shaders, UI, net, sound). Core is unit-testable and can run the AI simulation headless.</li>
+  <li>The rendering stays custom: an <b>unshaded <code>.gdshader</code></b> ports the analytic panel lattice lighting, the ray-marched shadows and the procedural materials. Godot's lights and shadow maps aren't used.</li>
+  <li><b>Temporary sound:</b> C# renders a small set of sounds into <code>AudioStreamWav</code> buffers at startup. They play through <code>AudioStreamPlayer3D</code> on a bus with reverb and a low-pass filter, behind an <code>ISoundscape</code> interface so the real solution can replace it later. There are still no audio files.</li>
+  <li>11 milestones, M0 to M10. Each ends with something you can run. M0 (reorganise the repo, no behaviour change) can merge on its own right away.</li>
+</ul>
+</div>
+
+<nav class="toc">
+  <a href="#layout">1. Repository layout</a>
+  <a href="#arch">2. Architecture</a>
+  <a href="#parity">3. Determinism &amp; parity</a>
+  <a href="#map">4. File-by-file mapping</a>
+  <a href="#render">5. Rendering in Godot</a>
+  <a href="#sound">6. Temporary sound</a>
+  <a href="#milestones">7. Milestones</a>
+  <a href="#tooling">8. Tooling &amp; dev setup</a>
+  <a href="#risks">9. Risks &amp; gotchas</a>
+  <a href="#questions">10. Open questions</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="layout">1. Repository layout</h2>
+<p>The only TypeScript move that matters: <code>src/gen.ts</code> goes to <code>shared/gen.ts</code>, because the server, the web client and the parity fixtures all depend on it. The web client moves under <code>web/</code>. The root <code>package.json</code> and the <code>dist/</code> output stay where they are, so <code>server/server.ts</code> (which serves <code>../dist</code>) <b>doesn't change at all</b>.</p>
+
+<div class="grid2">
+<div class="card">
+<h3>Before</h3>
+<pre>index.html
+vite.config.ts  tsconfig.json
+src/            ← web client + gen.ts
+  ai/  gen.ts  main.ts  shaders.ts …
+shared/hunt.ts  ← imports ../src/gen.ts
+server/server.ts
+tests/          ← TS tests (node)
+scripts/        ← playwright, docs build
+docs/  shots/</pre>
+</div>
+<div class="card">
+<h3>After</h3>
+<pre>package.json  tsconfig.base.json      (root: npm scripts for all)
+shared/                 ← TS source of truth
+  gen.ts  hunt.ts
+server/server.ts        (unchanged)
+web/                    ← three.js client
+  index.html  vite.config.ts  tsconfig.json
+  src/  ai/ main.ts shaders.ts …
+  scripts/              (playwright: shot, smoke, *test.mjs)
+godot/                  ← C# desktop client
+  Backrooms.sln
+  Core/Backrooms.Core.csproj      (net8, no Godot)
+  Core.Tests/                     (xUnit: parity, hunt, AI)
+  Game/project.godot  Backrooms.Game.csproj
+    scripts/  shaders/  scenes/  export_presets.cfg
+tests/                  ← TS tests + fixtures
+  fixtures/gen-golden.json   (generated, committed)
+  parity/dump.ts
+docs/  shots/
+dist/                   (vite outDir stays at root)</pre>
+</div>
+</div>
+
+<details>
+<summary>What changes in the TS world in M0 (all mechanical)</summary>
+<ul>
+  <li><code>git mv src web/src</code>, <code>git mv index.html vite.config.ts web/</code>, <code>git mv src/gen.ts shared/gen.ts</code>. The import paths in <code>chunk.ts</code>, <code>props.ts</code>, <code>minimap.ts</code>, <code>main.ts</code>, <code>ai/*</code>, <code>shared/hunt.ts</code> and <code>tests/*</code> get updated to match.</li>
+  <li><code>web/vite.config.ts</code>: <code>root: 'web'</code> (or run vite with <code>--config web/vite.config.ts</code>), <code>build.outDir: '../dist'</code>, <code>emptyOutDir: true</code>. The dev port 5190 and the <code>/ws</code> proxy stay.</li>
+  <li>The root <code>package.json</code> scripts keep their names (<code>dev</code>, <code>build</code>, <code>server</code>, <code>start</code>, <code>test</code>, <code>sim</code>, <code>shot</code>, <code>typecheck</code>), and only their paths change. New ones: <code>gen:fixtures</code>, plus <code>godot:test</code> → <code>dotnet test godot/Core.Tests</code>.</li>
+  <li>The playwright scripts move to <code>web/scripts/</code>. <code>build-doc.mjs</code> and the doc template stay in <code>scripts/</code>, because they produce <code>docs/</code>.</li>
+  <li>The README gets a short "Two clients" section. CLAUDE.md doesn't exist yet: add one with the parity rule (§3).</li>
+  <li>To check it: <code>npm run typecheck &amp;&amp; npm test &amp;&amp; npm run build &amp;&amp; npm run server</code> serves the built site, plus <code>node web/scripts/smoke.mjs</code> and <code>solotest.mjs</code>.</li>
+</ul>
+</details>
+
+<!-- ============================================================ -->
+<h2 id="arch">2. Architecture</h2>
+<svg viewBox="0 0 1000 380" width="100%" role="img" aria-label="Architecture diagram">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--mute)"/></marker>
+  </defs>
+  <!-- shared -->
+  <rect x="350" y="20" width="300" height="86" rx="10" fill="none" stroke="var(--ts)" stroke-width="2"/>
+  <text x="500" y="44" text-anchor="middle" font-weight="700">shared/ (TypeScript)</text>
+  <text x="500" y="66" text-anchor="middle" font-size="13">gen.ts · hunt.ts</text>
+  <text x="500" y="88" text-anchor="middle" font-size="12" fill="var(--mute)">source of truth for the world and the rules</text>
+  <!-- web -->
+  <rect x="20" y="160" width="270" height="100" rx="10" fill="none" stroke="var(--web)" stroke-width="2"/>
+  <text x="155" y="186" text-anchor="middle" font-weight="700">web/ (three.js)</text>
+  <text x="155" y="208" text-anchor="middle" font-size="13">GLSL · Web Audio + HRTF</text>
+  <text x="155" y="228" text-anchor="middle" font-size="13">solo via LocalNet</text>
+  <text x="155" y="248" text-anchor="middle" font-size="12" fill="var(--mute)">browser</text>
+  <!-- server -->
+  <rect x="365" y="160" width="270" height="100" rx="10" fill="none" stroke="var(--srv)" stroke-width="2"/>
+  <text x="500" y="186" text-anchor="middle" font-weight="700">server/ (Node relay)</text>
+  <text x="500" y="208" text-anchor="middle" font-size="13">rooms · poses · hunt referee</text>
+  <text x="500" y="228" text-anchor="middle" font-size="13">catch LOS via solid()</text>
+  <text x="500" y="248" text-anchor="middle" font-size="12" fill="var(--mute)">unchanged</text>
+  <!-- godot -->
+  <rect x="710" y="140" width="270" height="140" rx="10" fill="none" stroke="var(--cs)" stroke-width="2"/>
+  <text x="845" y="164" text-anchor="middle" font-weight="700">godot/ (C#)</text>
+  <rect x="725" y="174" width="240" height="44" rx="6" fill="none" stroke="var(--cs)" stroke-dasharray="4 3"/>
+  <text x="845" y="193" text-anchor="middle" font-size="13">Core: Gen · ChunkData · Hunt</text>
+  <text x="845" y="210" text-anchor="middle" font-size="13">PathFinder · EntityAI · Protocol</text>
+  <rect x="725" y="226" width="240" height="44" rx="6" fill="none" stroke="var(--godot)" stroke-dasharray="4 3"/>
+  <text x="845" y="245" text-anchor="middle" font-size="13">Game: meshes · .gdshader · UI</text>
+  <text x="845" y="262" text-anchor="middle" font-size="13">Net · Soundscape (temp)</text>
+  <!-- fixtures -->
+  <rect x="710" y="20" width="270" height="86" rx="10" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="845" y="44" text-anchor="middle" font-weight="700">tests/fixtures/gen-golden.json</text>
+  <text x="845" y="66" text-anchor="middle" font-size="13">dumped by tests/parity/dump.ts</text>
+  <text x="845" y="88" text-anchor="middle" font-size="12" fill="var(--mute)">checked by dotnet test</text>
+  <!-- edges -->
+  <line x1="420" y1="106" x2="190" y2="158" stroke="var(--mute)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <text x="270" y="124" font-size="12" fill="var(--mute)">import</text>
+  <line x1="500" y1="106" x2="500" y2="158" stroke="var(--mute)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <text x="508" y="138" font-size="12" fill="var(--mute)">import</text>
+  <line x1="650" y1="63" x2="708" y2="63" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <line x1="845" y1="106" x2="845" y2="172" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <text x="853" y="138" font-size="12" fill="var(--accent)">must match</text>
+  <!-- ws -->
+  <line x1="290" y1="300" x2="365" y2="300" stroke="var(--srv)" stroke-width="1.5" marker-start="url(#ar)" marker-end="url(#ar)"/>
+  <line x1="635" y1="300" x2="710" y2="300" stroke="var(--srv)" stroke-width="1.5" marker-start="url(#ar)" marker-end="url(#ar)"/>
+  <line x1="155" y1="260" x2="155" y2="300" stroke="var(--srv)" stroke-width="1.5"/>
+  <line x1="155" y1="300" x2="290" y2="300" stroke="var(--srv)" stroke-width="1.5"/>
+  <line x1="845" y1="280" x2="845" y2="300" stroke="var(--srv)" stroke-width="1.5"/>
+  <line x1="845" y1="300" x2="710" y2="300" stroke="var(--srv)" stroke-width="1.5"/>
+  <line x1="500" y1="260" x2="500" y2="300" stroke="var(--srv)" stroke-width="1.5"/>
+  <text x="500" y="330" text-anchor="middle" font-size="13">same JSON protocol over /ws: web and desktop players can share a room</text>
+  <text x="500" y="352" text-anchor="middle" font-size="12" fill="var(--mute)">Godot connects to ws://host:5191/ws (configurable in the menu / settings)</text>
+</svg>
+
+<p>Why split C# into two projects: Core has no <code>using Godot</code>, so the parity tests, the hunt rule tests and the 30-round AI simulation run with a plain <code>dotnet test</code> (fast, CI-friendly, no editor). The Godot project references Core with a normal <code>&lt;ProjectReference&gt;</code>.</p>
+
+<!-- ============================================================ -->
+<h2 id="parity">3. Determinism &amp; parity</h2>
+<p>This is the part that can't be approximate. Three implementations must agree:</p>
+<table>
+<tr><th>Where</th><th>What</th><th>Why it matters</th></tr>
+<tr><td><code>shared/gen.ts</code></td><td>hash3, zones, solid, ceilingAt, lightKind, findFree, rng</td><td>the web client renders it, and the relay uses it for line of sight on catches, exit placement and spawns</td></tr>
+<tr><td><code>Core/Gen.cs</code></td><td>the same functions</td><td>if one cell differs, a desktop player sees a wall where the server sees none (and vice versa), and desktop and web players in the same room see different worlds</td></tr>
+<tr><td><code>.gdshader</code> <code>hash3</code></td><td>panel flicker, tints, wallpaper noise</td><td>visual only, but it must match the C# light lattice, otherwise a lit panel gets a dark ceiling</td></tr>
+</table>
+
+<h3>Porting rules for the hash</h3>
+<pre>// TS:  Math.imul(x, 374761393)  … (h ^ (h &gt;&gt;&gt; 13))  … (h &gt;&gt;&gt; 0) / 4294967296
+// C#:  wrapping 32-bit arithmetic, exactly the same steps
+public static double Hash3(int x, int y, int z) {
+    unchecked {
+        int h = x * 374761393 + y * 668265263 + (z + Seed * 1013) * -2048144777;
+        h = (int)(((uint)h ^ ((uint)h &gt;&gt; 13))) * 1274126177;
+        h ^= (int)((uint)h &gt;&gt; 16);
+        return (uint)h / 4294967296.0;
+    }
+}</pre>
+<ul>
+  <li><b>Floats:</b> TS numbers are IEEE doubles, so C# uses <code>double</code> everywhere in Core (vnoise, zone warping, findFree's trigonometry). Use <code>Math.Floor</code>, never casts, for negative coordinates, and port the <code>mod()</code> helper literally.</li>
+  <li><b>Math.round:</b> JS rounds .5 toward +∞. C#'s <code>Math.Round</code> uses banker's rounding by default. Use <code>Math.Floor(x + 0.5)</code> wherever the TS uses <code>Math.round</code> (findFree, the height quantisation in chunk.ts).</li>
+  <li><b>Trigonometry:</b> <code>Math.cos</code>/<code>sin</code> can differ in the last ulp between V8 and .NET. findFree only rounds their result to an integer cell, so a mismatch is very unlikely, and the fixtures cover it anyway.</li>
+  <li><b>The <code>rng()</code> PRNG</b> (mulberry32): port it with <code>uint</code> and check the first 64 outputs for a handful of seeds.</li>
+  <li><b>Random choices made by the relay</b> (roles, exit) come from the server over the network. The client never recomputes them, so <code>Math.random</code> isn't a parity concern.</li>
+</ul>
+
+<h3>Golden fixtures</h3>
+<p><code>npm run gen:fixtures</code> runs <code>tests/parity/dump.ts</code>, which writes <code>tests/fixtures/gen-golden.json</code> (committed, a few hundred KB, gzip if needed):</p>
+<ul>
+  <li><code>hash3</code> on 2,000 random triples, including negatives and extremes, for 3 seeds;</li>
+  <li>a <code>solid</code> bitmap and quantised <code>ceilingAt</code> over 4 windows of 256×256 cells per seed, chosen to cross zone borders and negative coordinates. They're stored as base64 bitsets;</li>
+  <li><code>zoneAt</code> (type, S, off, h, rail) on a sparse grid, <code>lightKind</code> over a 64×64 lattice, <code>findFree</code> from 50 points, and the first values of <code>rng</code>;</li>
+  <li>the chunk outputs for 2 chunks (occupancy RGBA bytes, light texture bytes, and a hash of the greedy quad list). This catches bugs in the chunk builder too.</li>
+</ul>
+<p><code>Core.Tests/GenParityTests.cs</code> loads the file and compares, reporting the first mismatching cell. <b>Rule for CLAUDE.md:</b> any change to <code>shared/gen.ts</code> is made in <code>Core/Gen.cs</code> (and the shader hash if it changes) in the same commit, then <code>npm run gen:fixtures &amp;&amp; npm run godot:test</code>.</p>
+
+<!-- ============================================================ -->
+<h2 id="map">4. File-by-file mapping</h2>
+<table>
+<tr><th>Web (TS)</th><th>Godot (C#)</th><th>Godot construct</th><th>Effort</th></tr>
+<tr><td><code>shared/gen.ts</code> (267)</td><td><code>Core/Gen.cs</code>, <code>Core/Zone.cs</code></td><td>pure static class, zone cache in a <code>Dictionary</code> (ThreadLocal or locked, because chunks are built on worker threads)</td><td><span class="tag t-easy">easy</span></td></tr>
+<tr><td><code>src/chunk.ts</code> (284)</td><td><code>Core/ChunkData.cs</code> + <code>Game/ChunkManager.cs</code></td><td>Core builds arrays (positions, normals, custom attributes, occupancy/light bytes) on a <code>Task</code>. Game turns them into an <code>ArrayMesh</code> and an <code>ImageTexture</code> on the main thread, within a per-frame budget</td><td><span class="tag t-med">medium</span></td></tr>
+<tr><td><code>src/props.ts</code> (307)</td><td><code>Core/Props.cs</code> (templates, GeoBuilder) + mesh upload</td><td>same box templates. The <code>aA</code>/<code>aB</code>/<code>aCol</code> attributes go to <code>CUSTOM0</code>/<code>CUSTOM1</code>/<code>COLOR</code></td><td><span class="tag t-easy">easy</span></td></tr>
+<tr><td><code>src/shaders.ts</code> (365)</td><td><code>Game/shaders/level.gdshaderinc</code>, <code>level.gdshader</code>, <code>prop.gdshader</code></td><td>unshaded spatial shaders, see §5</td><td><span class="tag t-med">medium</span></td></tr>
+<tr><td><code>src/post.ts</code> (202)</td><td><code>Game/Post.cs</code> + <code>shaders/camcorder.gdshader</code></td><td>WorldEnvironment glow + ACES, then a full-screen camcorder shader, see §5</td><td><span class="tag t-med">medium</span></td></tr>
+<tr><td><code>src/main.ts</code> (507)</td><td><code>Game/Main.cs</code>, <code>Player.cs</code>, <code>Menu.tscn</code></td><td><code>CharacterBody3D</code>-free player using the same <code>collides()</code> grid test (keeps the feel identical), InputMap actions, the <code>?seed/room/solo</code> URL params become menu fields and command-line args</td><td><span class="tag t-med">medium</span></td></tr>
+<tr><td><code>src/minimap.ts</code> (533)</td><td><code>Game/UI/Minimap.cs</code>, <code>FullMap.cs</code></td><td><code>Control._Draw()</code>, fog-of-war tiles in an <code>Image</code>/<code>ImageTexture</code></td><td><span class="tag t-med">medium</span></td></tr>
+<tr><td><code>src/avatars.ts</code> (251)</td><td><code>Game/Avatars.cs</code>, <code>ExitDoor.cs</code></td><td>box meshes with the prop shader, which takes the textures of the chunk they stand in. Name tags as <code>Label3D</code></td><td><span class="tag t-easy">easy</span></td></tr>
+<tr><td><code>src/net.ts</code> (176)</td><td><code>Game/Net/Net.cs</code> + <code>Core/Protocol.cs</code></td><td><code>System.Net.WebSockets.ClientWebSocket</code> + <code>System.Text.Json</code>, with messages queued to the main thread. Same snapshot interpolation (120 ms behind)</td><td><span class="tag t-easy">easy</span></td></tr>
+<tr><td><code>src/localnet.ts</code> (116)</td><td><code>Game/Net/LocalNet.cs</code></td><td>subclass of Net, runs the C# hunt rules + EntityAI in-process</td><td><span class="tag t-easy">easy</span></td></tr>
+<tr><td><code>shared/hunt.ts</code> (166)</td><td><code>Core/HuntRules.cs</code></td><td>port for solo mode only (the relay keeps the TS one). The cases in <code>tests/hunt.test.ts</code> get ported to xUnit</td><td><span class="tag t-easy">easy</span></td></tr>
+<tr><td><code>src/hunt.ts</code> (223)</td><td><code>Game/Hunt.cs</code> + HUD scene</td><td>stamina, phasing, banner, dread value fed to the camcorder shader</td><td><span class="tag t-easy">easy</span></td></tr>
+<tr><td><code>src/ai/path.ts</code> (240), <code>entity.ts</code> (388)</td><td><code>Core/AI/PathFinder.cs</code>, <code>EntityAI.cs</code></td><td>port the custom A* as is (phase-aware wall costs, string-pulling). <code>AStarGrid2D</code> doesn't fit finite wall costs well</td><td><span class="tag t-easy">easy</span></td></tr>
+<tr><td><code>tests/ai.sim.ts</code></td><td><code>Core.Tests/AiSimTests.cs</code></td><td>30 rounds per difficulty. Assert catch rates fall in a band around the TS numbers (10 / 33 / 87 %)</td><td><span class="tag t-easy">easy</span></td></tr>
+<tr><td><code>src/audio.ts</code> (580)</td><td><code>Game/Audio/ISoundscape.cs</code>, <code>TempSoundscape.cs</code></td><td>see §6</td><td><span class="tag t-hard">deferred</span></td></tr>
+<tr><td><code>scripts/*.mjs</code> (playwright)</td><td>—</td><td>stay with the web client. For Godot, an optional <code>--screenshot</code> command-line mode can come later</td><td>—</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="render">5. Rendering in Godot</h2>
+<div class="grid2">
+<div class="card">
+<h3>Level &amp; prop shaders</h3>
+<ul>
+  <li><code>shader_type spatial; render_mode unshaded, cull_back;</code> (props: <code>cull_disabled</code>). Lighting, AO and shadows are computed in <code>fragment()</code> exactly like the GLSL, with output to <code>ALBEDO</code> as HDR (unshaded albedo can go above 1 in Forward+).</li>
+  <li>One shared <code>level.gdshaderinc</code>. <code>prop.gdshader</code> does <code>#define PROP</code>, then <code>#include</code>s it, replacing three.js <code>defines</code>.</li>
+  <li><code>hash3</code> with <code>uint</code> arithmetic, the same constants as the GLSL.</li>
+  <li><b>Per-chunk data:</b> <code>uOcc</code>/<code>uLights</code> textures and their origins live in a per-chunk <code>ShaderMaterial</code>. Instance uniforms can't hold samplers, so it's one material per chunk, about 30 in total, which is fine.</li>
+  <li><b>Global data:</b> <code>uTime</code>, <code>uSeed</code>, fog and quality become <code>global uniform</code>s (project shader globals). Global uniforms can't be arrays, so <code>uEnt[4]</code> becomes 4 <code>vec4</code> globals <code>ent0..ent3</code>.</li>
+  <li>The textures use <code>filter_linear</code> and <code>repeat_disable</code>, with sampler hints matching the three.js settings (the occupancy texture is sampled linearly for soft AO).</li>
+  <li>Godot's fog, SSAO and SDFGI are off. The shader does its own fog, as on the web.</li>
+</ul>
+</div>
+<div class="card">
+<h3>Post / camcorder</h3>
+<ul>
+  <li><b>Bloom and tone mapping:</b> <code>WorldEnvironment</code> glow (levels 1–2 + 4–5 ≈ the two-level bloom, HDR threshold ≈ the <code>smoothstep(1.2, 3.5)</code> bright pass) and <code>tonemap_mode = ACES</code>.</li>
+  <li><b>Camcorder:</b> a full-screen <code>ColorRect</code> on a top <code>CanvasLayer</code> with a <code>canvas_item</code> shader reading <code>hint_screen_texture</code>. It does the grade, chroma bleed, aberration, tape jitter, grain, vignette, plus <code>uDread</code>/<code>uHunter</code>/<code>uFade</code>.</li>
+  <li><b>The ordering difference:</b> the web grade runs <i>before</i> tone mapping, in HDR. Here it runs after. The yellow/olive grade constants will need re-tuning by eye against <code>shots/hero-*.png</code>. If that isn't enough, upgrade to a <code>CompositorEffect</code> (pre-tonemap, Forward+ only).</li>
+  <li><b>MSAA:</b> <code>Viewport.msaa_3d = 4x</code>. <b>Resolution scaling:</b> <code>scaling_3d_scale</code> driven by the same frame-time controller (target ≈ 18 ms), and FSR 1 as an option.</li>
+  <li><b>Renderer:</b> Forward+ (desktop only, so the Compatibility renderer isn't needed).</li>
+</ul>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sound">6. Temporary sound</h2>
+<p><b>Goal:</b> the game isn't silent, and the gameplay cues (entity drone, heavy steps, panting, player footsteps) can be heard and placed in space. Fidelity comes later. Everything sits behind an interface, so the real solution replaces one class.</p>
+<pre>public interface ISoundscape {
+    void Start(); void SetMuted(bool m);
+    void Update(Vector3 pos, Vector3 fwd, IEnumerable&lt;LightInfo&gt; lights, float dt);
+    void PlayerStep(float run); void Footstep(float x, float z, bool heavy = false);
+    void Presence(string key, PresenceKind kind, float x, float z, float level = 1);
+    void OwnBreath(float level); void EndFrame();
+}</pre>
+<table>
+<tr><th>Web (Web Audio)</th><th>Temporary Godot version</th></tr>
+<tr><td>synthesised in real time (oscillators, noise, biquads)</td><td><code>SoundBank.cs</code> renders about 10 clips into <code>AudioStreamWav</code> (16-bit PCM) at startup, in C#: mains hum loop (60/120/180 Hz + noise), panel buzz loop, flicker crackle, 4 footstep variants, knock, slam, drone loop, breath loop, creak. The DSP is simple sine/noise/one-pole filters, ported roughly from <code>audio.ts</code>. No files.</td></tr>
+<tr><td>HRTF <code>PannerNode</code>s on the 4 nearest panels</td><td>a pool of 4 <code>AudioStreamPlayer3D</code> moved to the nearest lit panels, with <code>attenuation_model = inverse_square</code>. Panning only, no HRTF.</td></tr>
+<tr><td>convolver reverb, wet/dry, compressor</td><td>an <code>"World"</code> audio bus with <code>AudioEffectReverb</code> (room 0.8, damping 0.7) + <code>AudioEffectLowPassFilter</code>. The master bus gets <code>AudioEffectCompressor</code>.</td></tr>
+<tr><td>random events, presence, own breath</td><td>the same scheduling logic, ported as is, playing clips from the bank with random pitch and volume.</td></tr>
+<tr><td>muffling through walls</td><td>a per-player low-pass cutoff from a <code>freeDistance</code>-style occlusion check (or skip it in the temporary version).</td></tr>
+</table>
+<p>Later options, to look at when we come back to this: Steam Audio GDExtension (HRTF + occlusion), a real-time <code>AudioStreamGenerator</code> synth in C#, or FMOD/Wwise. The interface stays the same whichever we pick.</p>
+
+<!-- ============================================================ -->
+<h2 id="milestones">7. Milestones</h2>
+<p>Each milestone is its own PR with commits split by concern. The web build has to stay green after every one.</p>
+
+<div class="ms"><h3>M0 · Reorganise the repo (TS only)</h3>
+<p>The moves from §1. <code>gen.ts</code> goes to <code>shared/</code>, the web client goes to <code>web/</code>, and the root scripts are updated. No behaviour changes.</p>
+<p class="exit"><b>Done when:</b> typecheck, <code>npm test</code>, the build, the relay serving <code>dist/</code>, and the smoke + solotest playwright runs all pass, and the screenshots match the old ones.</p></div>
+
+<div class="ms"><h3>M1 · C# skeleton + generation parity</h3>
+<p><code>godot/</code> solution, <code>Core</code>, <code>Core.Tests</code>, an empty Godot <code>Game</code> project. Port <code>Gen.cs</code> and <code>Rng</code>. <code>dump.ts</code> + fixtures + <code>GenParityTests</code>.</p>
+<p class="exit"><b>Done when:</b> <code>dotnet test</code> is green on every fixture, and a deliberately broken constant makes it fail.</p></div>
+
+<div class="ms"><h3>M2 · Chunks &amp; walking around (debug look)</h3>
+<p><code>ChunkData</code> (occupancy/light bytes, greedy walls/ceilings, soffits) with a parity test against the chunk fixtures. <code>ChunkManager</code> streaming with a time budget on worker tasks. Player controller with the same <code>collides()</code>, run, noclip, and a flat-colour debug shader.</p>
+<p class="exit"><b>Done when:</b> you can walk through a <code>--seed=123</code> world with no hitches. The layout matches the web version from the same viewpoint, and the minimap tiles (from M6) line up later.</p></div>
+
+<div class="ms"><h3>M3 · Level shader port</h3>
+<p>Materials (wallpaper, carpet, tiles, panels), lattice lighting, flicker and dead blocks, ray-marched soft shadows, AO, fog, quality setting. The prop shader variant.</p>
+<p class="exit"><b>Done when:</b> side-by-side screenshots against the web at the same seed and viewpoint (<code>viewpoint(k)</code> ported) look the same before post-processing.</p></div>
+
+<div class="ms"><h3>M4 · Props, doors to nowhere, stairs into the ceiling</h3>
+<p>Box templates, half-rendered and merged modes, the vertex-snap glitch, emissive props.</p>
+<p class="exit"><b>Done when:</b> the prop placement per chunk is identical to the web (a fixture covers the spot list).</p></div>
+
+<div class="ms"><h3>M5 · Post / camcorder</h3>
+<p>Environment glow + ACES, camcorder shader, <code>V</code>/<code>H</code> toggles, adaptive resolution, stats overlay (<code>P</code>).</p>
+<p class="exit"><b>Done when:</b> it looks like the web screenshots after grade tuning, and holds 60 fps or more at 1080p on the target machine.</p></div>
+
+<div class="ms"><h3>M6 · UI: menu, HUD, minimap, full map</h3>
+<p>Menu (seed, room, name, server URL, play alone + difficulty), toasts, minimap with zoom, full map with marks to reach, fullscreen, mouse capture, settings saved in <code>user://settings.cfg</code>.</p>
+<p class="exit"><b>Done when:</b> every keyboard shortcut in the README works in Godot.</p></div>
+
+<div class="ms"><h3>M7 · Multiplayer</h3>
+<p><code>Net.cs</code> (same protocol), avatars, name tags, interpolation, fallback to single player when the relay isn't reachable.</p>
+<p class="exit"><b>Done when:</b> a web player and a Godot player in the same room see each other in the right places, and their world maps are identical.</p></div>
+
+<div class="ms"><h3>M8 · The Hunt + solo vs CPU</h3>
+<p><code>HuntRules.cs</code>, <code>PathFinder.cs</code>, <code>EntityAI.cs</code> in Core with ported tests and the simulation. Client <code>Hunt.cs</code>: stamina, phasing, HUD, entities killing lights (the ent0..3 globals), dread grade, <code>LocalNet</code>.</p>
+<p class="exit"><b>Done when:</b> the hunt and AI tests pass, the simulation's catch rates are within ±10 points of the TS ones, a mixed web + Godot multiplayer round plays to the end, and solo works offline.</p></div>
+
+<div class="ms"><h3>M9 · Temporary sound</h3>
+<p><code>ISoundscape</code>, <code>SoundBank</code>, <code>TempSoundscape</code>, buses (§6). <code>K</code> mutes.</p>
+<p class="exit"><b>Done when:</b> the hum, buzzers, footsteps (own and other players'), and the entity drone and breath can be heard and are positioned in space.</p></div>
+
+<div class="ms"><h3>M10 · Packaging &amp; install</h3>
+<p>Export presets for Windows (x86_64) and Linux. App icon and name, <code>--seed</code>/<code>--room</code>/<code>--server</code> command-line args, version from <code>package.json</code>. Optional: an installer (Inno Setup on Windows, AppImage or tarball on Linux), and a GitHub Actions job that runs <code>dotnet test</code> + the TS tests, then exports builds on tags.</p>
+<p class="exit"><b>Done when:</b> a fresh Windows machine can install the game, run it and join a room on the deployed relay.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="tooling">8. Tooling &amp; dev setup</h2>
+<p>Right now neither <code>dotnet</code> nor <code>godot</code> is installed in this WSL distro. Needed:</p>
+<ul>
+  <li><b>.NET 8 SDK</b> (or newer, the one the chosen Godot release requires) in WSL, for <code>dotnet build/test</code> of Core and of the Godot project.</li>
+  <li><b>Godot 4.x .NET edition</b> (the latest stable): the editor plus the export templates.</li>
+  <li>Godot generates <code>.godot/</code>, <code>*.import</code>, <code>bin/</code> and <code>obj/</code>. Add them to <code>.gitignore</code> in M1.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="risks">9. Risks &amp; gotchas</h2>
+<details open class="warn"><summary>Generation drifts between TS and C#</summary>
+<p>This is the worst failure, because nothing visibly breaks: a desktop player just walks "through" a wall the server thinks is there and never gets caught. Mitigation: golden fixtures, the CLAUDE.md rule, CI running both test suites. Optional but cheap: on <code>welcome</code>, the client sends a hash of <code>solid()</code> over a fixed window, and logs a warning if it doesn't match a value baked into the build. That changes only the client, the server stays the same.</p></details>
+<details><summary>Chunk build hitches</summary>
+<p>About 9.2k <code>solid()</code> calls, plus the lattice and greedy meshing, per chunk. In C# that's sub-millisecond, but uploading the mesh and textures has to happen on the main thread. Keep the web's time-budgeted streaming and only upload N chunks per frame. The zone cache must be thread-safe (one instance per thread, or a ConcurrentDictionary).</p></details>
+<details><summary>The camcorder look differs because of tone-mapping order</summary>
+<p>See §5. Accept a re-tune, or move the grade into a CompositorEffect.</p></details>
+<details><summary>Unshaded HDR + glow</summary>
+<p>Godot's glow uses the HDR scene. Unshaded <code>ALBEDO</code> above 1.0 does reach it in Forward+, but check this early in M3/M5 with a single bright panel test scene before porting everything.</p></details>
+<details><summary>Maintaining two clients</summary>
+<p>Features added to one client won't appear in the other by magic. Proposal: <code>shared/</code> + <code>Core/</code> hold everything that's rules and world, and the clients only do presentation. A feature that touches rules lands in both in the same PR, while presentation-only features can diverge.</p></details>
+
+<!-- ============================================================ -->
+<h2 id="questions">10. Open questions</h2>
+<div class="q"><b>Q1 · Where does the Godot editor run?</b> (a) the Windows editor opening the project via <code>\\wsl.localhost\…</code>, which is simple but has slower file I/O and an unreliable file watcher; (b) the Linux editor inside WSL through WSLg, which uses the same filesystem as the CLI but makes GPU performance in WSLg hard to judge; (c) a separate Windows clone for Godot work. <i>Recommendation: (b) for day-to-day work and tests, then check performance with a Windows export.</i></div>
+<div class="q"><b>Q2 · Which platforms to install on?</b> Windows only, or Windows + Linux (+ macOS, which needs signing)? This affects M10 only.</div>
+<div class="q"><b>Q3 · Do web and desktop players share rooms?</b> The plan assumes yes, for free, since it's the same protocol. If not, nothing changes except the parity test becomes less critical (it would still matter for solo-mode AI behaviour).</div>
+<div class="q"><b>Q4 · Visual fidelity target:</b> pixel-close to the web version, or "same spirit, free to use Godot features where they look better"? The plan assumes pixel-close for M3, which also makes regressions easy to spot.</div>
+
+<p style="margin-top:40px;color:var(--mute);font-size:14px">Sources read for this plan: <code>README.md</code>, <code>src/gen.ts</code>, <code>src/chunk.ts</code>, <code>src/shaders.ts</code>, <code>src/post.ts</code>, <code>src/audio.ts</code>, <code>server/server.ts</code>, <code>src/net.ts</code>, <code>src/ai/path.ts</code>, the configs, and the import graph across the repo.</p>
+</div>
+</body>
+</html>
