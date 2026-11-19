@@ -13,7 +13,8 @@
     "start": "npm run build && node server/server.ts",
     "test": "node tests/hunt.test.ts && node tests/ai.test.ts",
     "sim": "node tests/ai.sim.ts 30",
-    "gen:fixtures": "node tests/parity/dump.ts"
+    "gen:fixtures": "node tests/parity/dump.ts",
+    "godot:test": "dotnet test godot/Core.Tests"
   },
   "author": "",
   "license": "ISC",
