@@ -12,6 +12,7 @@ export const H_SCALE = 8.0; // ceiling height encoding range in the texture (met
 
 let SEED = 1;
 export function setSeed(s: number) {
+  if ((s | 0) === SEED) return; // the relay calls this every tick; keep the zone cache warm
   SEED = s | 0;
   zoneCache.clear();
 }

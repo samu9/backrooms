@@ -1,7 +1,8 @@
 // "The Hunt": one player is the Entity, the others are Wanderers. Caught wanderers become entities
 // too. Wanderers win if anyone reaches the exit door or is still free when the timer runs out.
 //
-// The relay is the referee: it assigns roles, places the exit, and decides catches and escapes
+// Shared by the relay (multiplayer) and the browser (single player, src/localnet.ts).
+// The referee assigns roles, places the exit, and decides catches and escapes
 // from the positions players report, checking line of sight with the same solid() the game uses.
 import { CELL, findFree, setSeed, solid } from '../src/gen.ts';
 
@@ -10,7 +11,9 @@ export type Phase = 'lobby' | 'countdown' | 'hunt' | 'end';
 export type Winner = 'entity' | 'wanderers' | 'aborted' | null;
 
 export const COUNTDOWN_S = 10;
-export const HUNT_S = Number(process.env.HUNT_SECONDS ?? 300);
+// read from the environment on the relay; the browser (single player) has no process.env
+const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+export const HUNT_S = Number(env.HUNT_SECONDS ?? 300);
 export const END_S = 10;
 export const CATCH_DIST = 1.1;
 export const EXIT_DIST = 1.5;
