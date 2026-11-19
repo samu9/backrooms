@@ -84,6 +84,22 @@ wanderer that walks to the exit and sprints when it sees the Entity coming. Curr
 30 rounds each: Easy catches it 10% of the time, Normal 33%, Nightmare 87%. A real player can
 also hide, so treat these as a relative scale.
 
+## Repository layout
+
+| Folder | What |
+|---|---|
+| `shared/` | The world generator (`gen.ts`) and the hunt rules (`hunt.ts`). Used by the web client, the relay and the tests. |
+| `web/` | The browser client: `web/src/` (three.js), `web/index.html`, `web/vite.config.ts`, and the Playwright scripts in `web/scripts/`. Builds to the root `dist/`. |
+| `server/` | The multiplayer relay and hunt referee. Serves `dist/` too. |
+| `tests/` | Node tests for the rules and the CPU entity (`npm test`, `npm run sim`). |
+| `scripts/` | Builds `docs/layout-algorithm.html` from `shared/gen.ts` (`npm run doc`). |
+| `docs/` | Explainers and plans, including the [Godot port plan](docs/godot-port-plan.html). |
+
+A desktop client in Godot (C#) is planned under `godot/`, next to the web one. It will play in the
+same rooms through the same relay.
+
+The npm scripts need Node 22.6 or newer, because the server and tests run `.ts` files directly.
+
 ## How it works
 
 Stack: three.js on WebGL2, hand-written GLSL, Web Audio, Vite + TypeScript (the same approach as
