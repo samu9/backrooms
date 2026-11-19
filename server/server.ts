@@ -11,7 +11,7 @@
 //   c→s  {t:'pose', x, z, yaw, pitch, v}          ~15 Hz
 //   s→c  {t:'poses', p:[[id, x, z, yaw, pitch, v, flags], ...]}   15 Hz batch per room
 //
-// The Hunt (see server/hunt.ts):
+// The Hunt (rules in shared/hunt.ts):
 //   c→s  {t:'start'}                              lobby only, needs 2+ players
 //   c→s  {t:'phase'}                              entity asks to walk through walls
 //   s→c  {t:'round', phase, remaining, exit, winner, roles:[[id, role]]}
@@ -20,7 +20,7 @@ import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { type Event, type Hunter, type RoundState, lateRole, newRound, startRound, tickRound, tryPhase } from './hunt.ts';
+import { type Event, type Hunter, type RoundState, lateRole, newRound, startRound, tickRound, tryPhase } from '../shared/hunt.ts';
 
 const PORT = Number(process.env.PORT ?? 5191);
 const DIST = resolve(import.meta.dirname, '..', 'dist');

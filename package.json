@@ -11,7 +11,8 @@
     "doc": "node scripts/build-doc.mjs",
     "server": "node server/server.ts",
     "start": "vite build && node server/server.ts",
-    "test": "node tests/hunt.test.ts"
+    "test": "node tests/hunt.test.ts && node tests/ai.test.ts",
+    "sim": "node tests/ai.sim.ts 30"
   },
   "author": "",
   "license": "ISC",

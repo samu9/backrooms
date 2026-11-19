@@ -5,7 +5,9 @@ import { CELL, findFree, freeDistance, rng, setSeed, solid } from './gen';
 import { FullMap, Minimap } from './minimap';
 import { Avatars, ExitDoor } from './avatars';
 import { ENTITY_SPEED, Hunt } from './hunt';
+import { LocalNet } from './localnet';
 import { Net } from './net';
+import type { Difficulty } from './ai/entity';
 import { Post } from './post';
 
 const q = new URLSearchParams(location.search);
@@ -28,6 +30,9 @@ if (ROOM) {
     console.warn('multiplayer unavailable, playing alone:', netError);
   }
 }
+// single player against the CPU entity: same rules, run in the page
+const SOLO = !ROOM && !SHOT && ['easy', 'normal', 'nightmare'].includes(q.get('solo') ?? '') ? (q.get('solo') as Difficulty) : null;
+if (SOLO) net = new LocalNet(SOLO, seed);
 setSeed(seed);
 
 // ---------- renderer ----------
@@ -187,6 +192,7 @@ const avatars = new Avatars(scene, mats.prop, shared as unknown as Record<string
 
 // ---------- the hunt ----------
 const hunt = new Hunt(net);
+hunt.solo = !!SOLO;
 const exitDoor = new ExitDoor(scene, avatars, mats.prop, shared as unknown as Record<string, THREE.IUniform>);
 hunt.onToast = (m) => toast(m);
 hunt.onTeleport = (x, z) => {
@@ -204,7 +210,8 @@ function roomLabel() {
     roomEl.textContent = netError ? 'OFFLINE' : '';
     return;
   }
-  roomEl.textContent = net.connected ? `ROOM ${net.room.toUpperCase()} · ${net.peers.size + 1}` : 'SIGNAL LOST';
+  if (net instanceof LocalNet) roomEl.textContent = `ALONE · ${net.difficulty.toUpperCase()}`;
+  else roomEl.textContent = net.connected ? `ROOM ${net.room.toUpperCase()} · ${net.peers.size + 1}` : 'SIGNAL LOST';
 }
 if (net) {
   for (const p of net.peers.values()) avatars.add(p);
@@ -263,6 +270,16 @@ mpForm.addEventListener('submit', (e) => {
   }
   location.href = u.toString();
 });
+document.querySelectorAll<HTMLButtonElement>('#mp [data-solo]').forEach((b) =>
+  b.addEventListener('click', (e) => {
+    e.preventDefault();
+    const u = new URL(location.href);
+    u.search = '';
+    u.searchParams.set('solo', b.dataset.solo!);
+    location.href = u.toString();
+  }),
+);
+if (SOLO) document.getElementById('mpHint')!.textContent = `alone, ${SOLO}: something else is in here with you`;
 if (ROOM) document.getElementById('mpHint')!.textContent = net ? `in room "${ROOM}" with ${net.peers.size} other(s) · seed ${seed}` : `could not reach the relay (${netError})`;
 menu.addEventListener('click', () => {
   canvas.requestPointerLock();
@@ -274,6 +291,8 @@ menu.addEventListener('click', () => {
     }
   }
   audio?.start();
+  // single player: the first time in, the hunt starts on its own
+  if (SOLO && !started) setTimeout(() => hunt.requestStart(), 1500);
   started = true;
 });
 document.addEventListener('pointerlockchange', () => {

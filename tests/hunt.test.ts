@@ -1,7 +1,7 @@
 // Round logic of the hunt, run with: node tests/hunt.test.ts
 import assert from 'node:assert/strict';
 import { findFree, setSeed } from '../src/gen.ts';
-import { CATCH_DIST, type Hunter, newRound, startRound, tickRound, tryPhase } from '../server/hunt.ts';
+import { CATCH_DIST, type Hunter, newRound, startRound, tickRound, tryPhase } from '../shared/hunt.ts';
 
 const SEED = 42;
 setSeed(SEED);
