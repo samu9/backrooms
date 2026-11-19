@@ -369,6 +369,14 @@ public static double Hash3(int x, int y, int z) {
 <details><summary>Maintaining two clients</summary>
 <p>Features added to one client won't appear in the other by magic. Proposal: <code>shared/</code> + <code>Core/</code> hold everything that's rules and world, and the clients only do presentation. A feature that touches rules lands in both in the same PR, while presentation-only features can diverge.</p></details>
 
+<details open><summary>Server language and scaling (decision: keep TypeScript for now)</summary>
+<p>The relay forwards about 15 Hz position batches per room (up to 16 players) and referees the Hunt with cheap <code>solid()</code> line-of-sight checks. It never streams level data. Rough estimate, not measured: one Node process handles a few hundred busy rooms. Rooms are independent of each other, so it scales by running more processes, each owning a set of rooms.</p>
+<ul>
+  <li><b>Go/Rust:</b> several times the throughput per core, lower memory, no GC pauses. But it would be a <b>third</b> implementation of the generator that has to match the other two exactly (the server needs <code>solid()</code> for catches). Not worth it at the current scale.</li>
+  <li><b>If a rewrite is ever needed: C#</b> (ASP.NET Core WebSockets) referencing <code>Backrooms.Core</code>. Generation, hunt rules, protocol and tests are shared with the Godot client, so there are still only two implementations (TS for web, C# for Godot + server), and Kestrel's performance is in the same league as Go.</li>
+  <li><b>Cheaper steps, in order:</b> (1) a load-test script against the current relay, so decisions use real numbers; (2) a binary protocol for the position messages, a protocol change that both clients would adopt; (3) several relay processes, with a sticky route from room name to process; (4) only then, port the server to C# on top of Core.</li>
+</ul></details>
+
 <!-- ============================================================ -->
 <h2 id="questions">10. Open questions</h2>
 <div class="q"><b>Q1 · Where does the Godot editor run?</b> (a) the Windows editor opening the project via <code>\\wsl.localhost\…</code>, which is simple but has slower file I/O and an unreliable file watcher; (b) the Linux editor inside WSL through WSLg, which uses the same filesystem as the CLI but makes GPU performance in WSLg hard to judge; (c) a separate Windows clone for Godot work. <i>Recommendation: (b) for day-to-day work and tests, then check performance with a Windows export.</i></div>
