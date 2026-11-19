@@ -1,6 +1,6 @@
 // A* on the 0.5 m occupancy grid, in a window around the start. Walls can be given a finite cost,
 // so a path may cut through one: that is where the entity phases.
-import { CELL, solid } from '../gen.ts';
+import { CELL, solid } from '../../shared/gen.ts';
 
 // ---- cached occupancy (solid() is cheap but A* asks for the same cells many times) ----
 const BLOCK = 64;

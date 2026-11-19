@@ -65,7 +65,7 @@
 <body>
 <div class="wrap">
   <h1>How the Backrooms layout is generated</h1>
-  <p class="sub">The algorithm in <code>src/gen.ts</code> and <code>src/chunk.ts</code>. The pictures on this page come from the real generator code, bundled into this file.</p>
+  <p class="sub">The algorithm in <code>shared/gen.ts</code> and <code>src/chunk.ts</code>. The pictures on this page come from the real generator code, bundled into this file.</p>
 
   <div class="tldr">
     <strong>TL;DR</strong>
@@ -105,7 +105,7 @@
   </div>
 
   <h2 id="hash">1 · One hash, no state</h2>
-  <p>Every random choice goes through a single 32-bit integer hash (<code>src/gen.ts:23</code>):</p>
+  <p>Every random choice goes through a single 32-bit integer hash (<code>shared/gen.ts:23</code>):</p>
   <pre>hash3(x, y, salt) → [0, 1)
   h = x·374761393 + y·668265263 + (salt + seed·1013)·2246822519   (mod 2³²)
   h = (h ^ h>>13)·1274126177;  h ^= h>>16;   return h / 2³²</pre>
@@ -130,10 +130,10 @@
     <path class="arr" d="M535 130 V170 H630" /><text x="560" y="190" class="no">not on a line → skip to split test</text>
     <path class="arr" d="M835 170 H875 V130" />
   </svg>
-  <p class="cap">What <code>solid(gx, gz)</code> does (<code>src/gen.ts:176</code>). It answers in a few dozen integer operations, with no memory of neighbouring cells.</p>
+  <p class="cap">What <code>solid(gx, gz)</code> does (<code>shared/gen.ts:176</code>). It answers in a few dozen integer operations, with no memory of neighbouring cells.</p>
 
   <h2 id="zones">2 · Zones: deciding what kind of space you're in</h2>
-  <p>The plane is divided into 52-cell (26&nbsp;m) zones. Square zones would be easy to spot, so before the cell is snapped to a zone, its coordinates are pushed by 1-D value noise along the <i>other</i> axis (<code>src/gen.ts:142</code>):</p>
+  <p>The plane is divided into 52-cell (26&nbsp;m) zones. Square zones would be easy to spot, so before the cell is snapped to a zone, its coordinates are pushed by 1-D value noise along the <i>other</i> axis (<code>shared/gen.ts:142</code>):</p>
   <pre>wx = gx + floor(14 · noise(gz · 0.035))
 wz = gz + floor(14 · noise(gx · 0.031))
 zone = (floor(wx / 52), floor(wz / 52))    → cached params for that zone</pre>
@@ -141,7 +141,7 @@ zone = (floor(wx / 52), floor(wz / 52))    → cached params for that zone</pre>
     <figure class="fig" style="margin:0"><canvas id="warp0" height="260"></canvas><figcaption>Without warping: a tile grid you'd notice after a minute.</figcaption></figure>
     <figure class="fig" style="margin:0"><canvas id="warp1" height="260"></canvas><figcaption>With warping (the real <code>zoneAt</code>): borders wander by up to 7&nbsp;m.</figcaption></figure>
   </div>
-  <p>Each zone hashes its own coordinates to pick a type and parameters (<code>makeZone</code>, <code>src/gen.ts:68</code>):</p>
+  <p>Each zone hashes its own coordinates to pick a type and parameters (<code>makeZone</code>, <code>shared/gen.ts:68</code>):</p>
   <table>
     <thead><tr><th>Type</th><th>Share</th><th>Spacing S (cells)</th><th>Segment odds x / z</th><th>Doors</th><th>Extras</th><th>Ceiling</th></tr></thead>
     <tbody id="ztable"></tbody>
@@ -151,7 +151,7 @@ zone = (floor(wx / 52), floor(wz / 52))    → cached params for that zone</pre>
   <h2 id="lines">3 · Lines, segments, doors</h2>
   <p>Inside a zone, walls can only sit on <b>wall lines</b>: one-cell-thick (0.5&nbsp;m) lines every <code>S</code> cells in both directions, shifted by <code>off</code>. Two lines cross at a <b>crossing</b>, and the piece of line between two crossings is a <b>segment</b>. Each segment is decided on its own:</p>
   <div class="fig"><canvas id="anatomy" height="330"></canvas>
-    <figcaption>A hand-made 3×3-block example with <code>S = 10</code>. Each block shows one rule. The code is <code>segment()</code> at <code>src/gen.ts:158</code> and <code>solid()</code> at <code>src/gen.ts:176</code>.</figcaption></div>
+    <figcaption>A hand-made 3×3-block example with <code>S = 10</code>. Each block shows one rule. The code is <code>segment()</code> at <code>shared/gen.ts:158</code> and <code>solid()</code> at <code>shared/gen.ts:176</code>.</figcaption></div>
   <ol>
     <li><b>Exists?</b> <code>hash(line, segment, zone+10) &lt; p</code> (or <code>pz</code> for lines along x). Corridor zones set one to 0.93 and the other to 0.1, which gives long parallel halls.</li>
     <li><b>Door?</b> With probability <code>pd</code>, an opening <code>dw</code> cells wide is cut at a hashed position, never touching the crossing.</li>
@@ -171,7 +171,7 @@ zone = (floor(wx / 52), floor(wz / 52))    → cached params for that zone</pre>
   <p>Press <b>jump to a zone border</b> in the explorer to see one. Nothing checks that the layout makes sense, and nothing makes sure every space is reachable (see <a href="#gotchas">gotchas</a>).</p>
 
   <h2 id="lights">5 · Ceiling lights</h2>
-  <p>Panels sit on a fixed 3&nbsp;m lattice that ignores zones (<code>lightKind</code>, <code>src/gen.ts:222</code>):</p>
+  <p>Panels sit on a fixed 3&nbsp;m lattice that ignores zones (<code>lightKind</code>, <code>shared/gen.ts:222</code>):</p>
   <ul>
     <li>A panel covers 1.2×0.6&nbsp;m. If <i>any</i> of the 8 cells under it is wall, there's no panel.</li>
     <li>5% are missing, 8% are dead, and 7% flicker (the flicker timing is hashed in the shader). On top of that, about 8% of 5×5-panel blocks (15&nbsp;m) are entirely dead. Those are the dark areas.</li>
@@ -201,7 +201,7 @@ zone = (floor(wx / 52), floor(wz / 52))    → cached params for that zone</pre>
 <script>
 var Gen = (function(exports) {
 	Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-	// src/gen.ts
+	// shared/gen.ts
 	const CELL = .5;
 	const CHUNK_CELLS = 64;
 	const CHUNK = CELL * 64;
@@ -211,6 +211,7 @@ var Gen = (function(exports) {
 	const H_SCALE = 8;
 	let SEED = 1;
 	function setSeed(s) {
+		if ((s | 0) === SEED) return;
 		SEED = s | 0;
 		zoneCache.clear();
 	}
@@ -231,15 +232,14 @@ var Gen = (function(exports) {
 		return (hash3(i, 0, salt) * (1 - u) + hash3(i + 1, 0, salt) * u) * 2 - 1;
 	}
 	const mod = (a, b) => (a % b + b) % b;
-	let ZoneType = /* @__PURE__ */ function(ZoneType) {
-		ZoneType[ZoneType["Office"] = 0] = "Office";
-		ZoneType[ZoneType["Maze"] = 1] = "Maze";
-		ZoneType[ZoneType["Hall"] = 2] = "Hall";
-		ZoneType[ZoneType["Void"] = 3] = "Void";
-		ZoneType[ZoneType["Weird"] = 4] = "Weird";
-		ZoneType[ZoneType["Corridor"] = 5] = "Corridor";
-		return ZoneType;
-	}({});
+	const ZoneType = {
+		Office: 0,
+		Maze: 1,
+		Hall: 2,
+		Void: 3,
+		Weird: 4,
+		Corridor: 5
+	};
 	const ZONE_SIZE = 52;
 	const zoneCache = /* @__PURE__ */ new Map();
 	function makeZone(zi, zj) {
@@ -248,12 +248,12 @@ var Gen = (function(exports) {
 		const r2 = hash3(zi, zj, 2);
 		const r3 = hash3(zi, zj, 3);
 		let type;
-		if (r < .34) type = 0;
-		else if (r < .5) type = 1;
-		else if (r < .64) type = 5;
-		else if (r < .78) type = 2;
-		else if (r < .9) type = 4;
-		else type = 3;
+		if (r < .34) type = ZoneType.Office;
+		else if (r < .5) type = ZoneType.Maze;
+		else if (r < .64) type = ZoneType.Corridor;
+		else if (r < .78) type = ZoneType.Hall;
+		else if (r < .9) type = ZoneType.Weird;
+		else type = ZoneType.Void;
 		const z = {
 			type,
 			id,
@@ -271,7 +271,7 @@ var Gen = (function(exports) {
 			rail: hash3(zi, zj, 5) < .3
 		};
 		switch (type) {
-			case 0:
+			case ZoneType.Office:
 				z.S = 10 + 2 * Math.floor(r2 * 4);
 				z.p = z.pz = .72;
 				z.pd = .8;
@@ -279,7 +279,7 @@ var Gen = (function(exports) {
 				z.split = .45;
 				z.h = r3 < .15 ? 2.35 : 2.75;
 				break;
-			case 1:
+			case ZoneType.Maze:
 				z.S = 4 + Math.floor(r2 * 3);
 				z.p = z.pz = .55;
 				z.pd = .3;
@@ -287,7 +287,7 @@ var Gen = (function(exports) {
 				z.split = 0;
 				z.h = 2.6;
 				break;
-			case 5: {
+			case ZoneType.Corridor: {
 				z.S = 4 + Math.floor(r2 * 3);
 				const ax = r3 < .5;
 				z.p = ax ? .93 : .1;
@@ -298,7 +298,7 @@ var Gen = (function(exports) {
 				z.h = 2.6;
 				break;
 			}
-			case 2:
+			case ZoneType.Hall:
 				z.S = 10 + 2 * Math.floor(r2 * 4);
 				z.p = z.pz = .1;
 				z.pd = .5;
@@ -308,7 +308,7 @@ var Gen = (function(exports) {
 				z.split = .05;
 				z.h = r3 < .35 ? 4.6 : 3.1;
 				break;
-			case 4:
+			case ZoneType.Weird:
 				z.S = 6 + Math.floor(r2 * 4);
 				z.p = z.pz = .62;
 				z.pd = .55;
@@ -317,7 +317,7 @@ var Gen = (function(exports) {
 				z.partial = true;
 				z.h = r3 < .3 ? 2.2 : r3 < .6 ? 3.4 : 2.75;
 				break;
-			case 3:
+			case ZoneType.Void:
 				z.S = 22;
 				z.p = z.pz = .06;
 				z.pd = .2;

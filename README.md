@@ -91,7 +91,7 @@ Synthwave City), plus Playwright for screenshots.
 
 | Piece | File | Notes |
 |---|---|---|
-| Layout | `src/gen.ts` | A pure function of `(seed, cell)`, with 0.5 m cells. Warped zones (office, maze, corridor, pillar hall, weird, void) each have their own wall spacing, door odds, ceiling height and chair rail. Chunks can be built in any order and their edges always match. |
+| Layout | `shared/gen.ts` | A pure function of `(seed, cell)`, with 0.5 m cells. Warped zones (office, maze, corridor, pillar hall, weird, void) each have their own wall spacing, door odds, ceiling height and chair rail. Chunks can be built in any order and their edges always match. |
 | Chunks | `src/chunk.ts` | Chunks are 32 m. Each one is a single floor quad, greedy-merged ceilings and walls (soffits where ceiling heights change), a 96×96 occupancy/height texture with a 16-cell border, and a 16×16 light-state texture. That makes 2 draw calls per chunk, about 30 draw calls and about 30k triangles per frame. Chunks are streamed around the player within a time budget. |
 | Lighting | `src/shaders.ts` | Lighting is computed per pixel from the 4×4 nearest ceiling panels. Soft wall shadows are ray-marched through the occupancy texture, and ambient occlusion is read from the same texture. Some panels are dead, some flicker, and there are dark blocks. No shadow maps, no lightmaps. |
 | Materials | `src/shaders.ts` | Procedural wallpaper (column lines, chevrons, seams, grime, water stains), carpet, 2×4 ft acoustic tiles and prismatic light panels. Fine detail fades out based on how much of the surface each pixel covers, so it doesn't shimmer (moiré). |

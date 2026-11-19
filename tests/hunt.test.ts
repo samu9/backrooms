@@ -1,6 +1,6 @@
 // Round logic of the hunt, run with: node tests/hunt.test.ts
 import assert from 'node:assert/strict';
-import { findFree, setSeed } from '../src/gen.ts';
+import { findFree, setSeed } from '../shared/gen.ts';
 import { CATCH_DIST, type Hunter, newRound, startRound, tickRound, tryPhase } from '../shared/hunt.ts';
 
 const SEED = 42;
@@ -55,7 +55,7 @@ const mk = (id: number): Hunter => ({ id, role: 'none', pose: [sx, sz, 0, 0, 0, 
   setSeed(SEED);
   // find a 1-cell wall with open floor on both sides
   let spot: [number, number] | null = null;
-  const { solid } = await import('../src/gen.ts');
+  const { solid } = await import('../shared/gen.ts');
   for (let gx = 0; gx < 400 && !spot; gx++)
     for (let gz = 0; gz < 400 && !spot; gz++)
       if (solid(gx, gz) && !solid(gx - 1, gz) && !solid(gx + 1, gz) && !solid(gx - 1, gz - 1) && !solid(gx + 1, gz + 1)) spot = [gx, gz];
