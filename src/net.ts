@@ -121,7 +121,7 @@ export class Net {
     });
   }
 
-  private add(info: PeerInfo): Peer {
+  protected add(info: PeerInfo): Peer {
     const p: Peer = { id: info.id, name: info.name, color: info.color, snaps: [], x: 0, z: 0, yaw: 0, pitch: 0, v: 0, f: 0, visible: false };
     this.peers.set(p.id, p);
     return p;

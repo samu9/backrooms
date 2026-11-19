@@ -55,10 +55,34 @@ A horror game mode for 2–16 players in a room. Press **R** in a room to start 
   closes in, and you hear its drone and heavy steps from where it is. Each side only sees its own
   team on the maps.
 
-The relay is the referee (`server/hunt.ts`): it picks roles, places the exit and the entity's
+The relay is the referee (`shared/hunt.ts`): it picks roles, places the exit and the entity's
 spawn, and decides catches (within 1.1 m, with line of sight checked through the same `solid()`
 the game renders) and escapes. `npm test` runs the rules; `HUNT_SECONDS=60 npm run server`
 shortens rounds for testing.
+
+## Alone, against the Entity
+
+**PLAY ALONE** in the menu (`?solo=easy|normal|nightmare`) runs the hunt in single player. No
+relay is needed: the same rules (`shared/hunt.ts`) run in the page, and the Entity is a CPU
+(`src/ai/`). It doesn't know where you are. It has to find you:
+
+- **Sight:** a 110° cone. Range is shorter in dead zones (24 m lit / 7 m dark on Normal), so the
+  dark is where you hide. Walls block it, and a detection meter takes a moment to fill, so a
+  glimpse at the edge of its vision isn't fatal.
+- **Hearing:** sprinting carries 18 m, walking 5 m, panting 10 m, and walls muffle all of it.
+  A noise only tells it roughly where to look.
+- **Behaviour:** roam → investigate → chase → search, a small state machine. After losing you it
+  heads to where you'd be if you kept going, then checks around there.
+- **Phasing:** walls get a finite cost in its pathfinding (A* on the 0.5 m grid) when the ability
+  is ready. When cutting through a wall saves a long detour, it simply goes through.
+- **A director paces the tension:** if it hasn't found you in a while, it gets a vague hint about
+  where you're *heading*, 10–16 m off. Far away and out of your sight, it moves fast (it's never
+  seen doing that). After a long chase it backs off for 20–40 s.
+
+The exit is 130–170 m away in single player. `npm run sim` plays the CPU against a scripted
+wanderer that walks to the exit and sprints when it sees the Entity coming. Current balance over
+30 rounds each: Easy catches it 10% of the time, Normal 33%, Nightmare 87%. A real player can
+also hide, so treat these as a relative scale.
 
 ## How it works
 
@@ -73,7 +97,8 @@ Synthwave City), plus Playwright for screenshots.
 | Materials | `src/shaders.ts` | Procedural wallpaper (column lines, chevrons, seams, grime, water stains), carpet, 2×4 ft acoustic tiles and prismatic light panels. Fine detail fades out based on how much of the surface each pixel covers, so it doesn't shimmer (moiré). |
 | Props | `src/props.ts` | Furniture is built from boxes. A prop can be half-rendered (wireframe above a moving "streaming" edge, plain untextured grey below it), merged into the surface it touches (its colour turns into carpet, wallpaper or ceiling tile), or covered in wallpaper. Also: doors leading nowhere and stairs into the ceiling. |
 | Post | `src/post.ts` | HDR + MSAA, two-level bloom, ACES tone mapping, yellow/olive grade, composite-video chroma bleed, chromatic aberration, tape jitter, grain, vignette. Resolution scales automatically to keep the frame time under about 18 ms. |
-| The Hunt | `server/hunt.ts`, `src/hunt.ts` | Server-side round state machine and referee; client stamina, phasing, HUD, light-killing entities (shader uniform), dread grade, positional drone/breathing. |
+| CPU entity | `src/ai/path.ts`, `src/ai/entity.ts`, `src/localnet.ts` | A* with phase-aware wall costs and string-pulling; senses, state machine and director; an in-page stand-in for the relay. |
+| The Hunt | `shared/hunt.ts`, `src/hunt.ts` | Server-side round state machine and referee; client stamina, phasing, HUD, light-killing entities (shader uniform), dread grade, positional drone/breathing. |
 | Multiplayer | `server/server.ts`, `src/net.ts`, `src/avatars.ts` | WebSocket relay with rooms (max 16), one pose batch per room per tick, snapshot interpolation on the client. Avatars are lit with the prop shader and the textures of the chunk they stand in. |
 | Sound | `src/audio.ts` | Hum from the mains and the ballasts. The nearest panels buzz as HRTF-positioned sources, and the flickering ones crackle. Random events through a synthetic reverb: footsteps that aren't yours, knocking inside walls, distant slams, drones, creaks, and breathing behind you. |
 
@@ -87,4 +112,5 @@ node scripts/sheet.mjs shots/x/sheet.png shots/x/*.png     # contact sheet
 node scripts/smoke.mjs                                      # interactive run, errors + stats
 node scripts/mptest.mjs                                     # two players in one room (needs npm run server)
 node scripts/hunttest.mjs                                   # a full hunt round with two players
+node scripts/solotest.mjs                                   # single player vs the CPU, end to end
 ```
