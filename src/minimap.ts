@@ -46,6 +46,27 @@ function drawPin(c: CanvasRenderingContext2D, x: number, y: number, m: Marker, u
   c.restore();
 }
 
+/** The exit door: a small glowing doorway. */
+export function drawExit(c: CanvasRenderingContext2D, x: number, y: number, u: number, label = '') {
+  c.save();
+  c.translate(x, y);
+  c.shadowColor = '#fff6d8';
+  c.shadowBlur = 8 * u;
+  c.fillStyle = '#fffbea';
+  c.strokeStyle = 'rgba(0,0,0,0.8)';
+  c.lineWidth = u;
+  c.fillRect(-4 * u, -7 * u, 8 * u, 13 * u);
+  c.shadowBlur = 0;
+  c.strokeRect(-4 * u, -7 * u, 8 * u, 13 * u);
+  if (label) {
+    c.fillStyle = '#fffbea';
+    c.font = `bold ${7 * u}px "Courier New", monospace`;
+    c.textAlign = 'center';
+    c.fillText(label, 0, -11 * u);
+  }
+  c.restore();
+}
+
 /** Arrow for another player; `rot` is the canvas rotation (0 = pointing up). */
 export function drawPlayer(c: CanvasRenderingContext2D, x: number, y: number, rot: number, color: string, u: number) {
   c.save();
@@ -83,6 +104,8 @@ export class Minimap {
   markers: Marker[] = [];
   /** other players, drawn as coloured arrows */
   others: { x: number; z: number; yaw: number; color: string; name: string }[] = [];
+  /** the hunt's exit door, if this player is allowed to know where it is */
+  exit: { x: number; z: number } | null = null;
   private nextId = 1;
   onReached: (m: Marker) => void = () => {};
 
@@ -271,6 +294,18 @@ export class Minimap {
         c.restore();
       }
     }
+    if (this.exit) {
+      const dx = (this.exit.x - x) * k,
+        dz = (this.exit.z - z) * k;
+      let mx = dx * cs - dz * sn;
+      let my = dx * sn + dz * cs;
+      const d = Math.hypot(mx, my);
+      if (d > R) {
+        mx = (mx / d) * (S / 2 - 8 * u);
+        my = (my / d) * (S / 2 - 8 * u);
+      }
+      drawExit(c, S / 2 + mx, S / 2 + my, u * 0.8);
+    }
     for (const o of this.others) {
       const dx = (o.x - x) * k,
         dz = (o.z - z) * k;
@@ -444,6 +479,7 @@ export class FullMap {
     for (const m of this.map.markers) drawPin(c, sx(m.x), sy(m.z), m, u);
     c.font = `${12 * dpr}px "Courier New", monospace`;
     c.textAlign = 'center';
+    if (this.map.exit) drawExit(c, sx(this.map.exit.x), sy(this.map.exit.z), u, 'EXIT');
     for (const o of this.map.others) {
       drawPlayer(c, sx(o.x), sy(o.z), -o.yaw, o.color, u);
       c.fillStyle = 'rgba(242, 240, 230, 0.9)';

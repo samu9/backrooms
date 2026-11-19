@@ -39,6 +39,19 @@
       #mp input { background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(232, 220, 168, 0.35); color: #e8dca8; font: inherit; padding: 3px 8px; width: 150px; }
       #mp button { background: #e8dca8; color: #1a160a; border: 0; font: inherit; padding: 4px 12px; cursor: pointer; }
       #mp .hint { opacity: 0.55; font-size: 13px; margin-top: 6px; }
+      #hunt { position: fixed; left: 50%; top: 5%; transform: translateX(-50%); text-align: center; color: #f2f0e6; pointer-events: none;
+        font: 16px/1.3 "Courier New", ui-monospace, monospace; letter-spacing: 0.12em; text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6); }
+      #hbar { margin-top: 10px; font-size: 12px; }
+      #hbar .track { width: 220px; height: 6px; margin: 4px auto 0; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(242, 240, 230, 0.4); }
+      #hbarFill { height: 100%; background: #e8dca8; transition: width 0.1s linear; }
+      #hbar.bad #hbarFill { background: #d9534f; }
+      #hbanner { position: fixed; left: 0; right: 0; top: 34%; text-align: center; color: #f2f0e6; pointer-events: none; font-family: "Courier New", monospace;
+        text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6); }
+      #hbTitle { font-size: 56px; letter-spacing: 0.3em; }
+      #hbSub { font-size: 18px; letter-spacing: 0.15em; opacity: 0.8; margin-top: 8px; }
+      #hfrozen { position: fixed; inset: 0; background: #050402; color: #8a826a; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        font: 18px "Courier New", monospace; letter-spacing: 0.3em; z-index: 3; }
+      #hfrozenN { font-size: 64px; margin-top: 16px; color: #d9534f; }
       #stats { position: fixed; left: 8px; top: 8px; color: #fff8; font: 11px monospace; pointer-events: none; }
     </style>
   </head>
@@ -53,6 +66,9 @@
     <canvas id="map"></canvas>
     <div id="wp"></div>
     <div id="toast" class="hidden"></div>
+    <div id="hunt"><div id="hline"></div><div id="hbar" class="hidden"><span id="hbarLabel"></span><div class="track"><div id="hbarFill"></div></div></div></div>
+    <div id="hbanner" class="hidden"><div id="hbTitle"></div><div id="hbSub"></div></div>
+    <div id="hfrozen" class="hidden"><div>THE WANDERERS ARE HIDING</div><div id="hfrozenN"></div></div>
     <canvas id="fullmap" class="hidden"></canvas>
     <div id="stats" class="hidden"></div>
     <div id="menu">
@@ -66,7 +82,8 @@
       <table>
         <tr><td>look</td><td>mouse</td></tr>
         <tr><td>walk</td><td>W A S D · shift to run</td></tr>
-        <tr><td>noclip</td><td>N</td></tr>
+        <tr><td>noclip</td><td>N (not during a hunt)</td></tr>
+        <tr><td>the hunt: start · phase through walls</td><td>R · E</td></tr>
         <tr><td>camcorder fx / overlay</td><td>V / H</td></tr>
         <tr><td>full map (marks) · minimap · zoom</td><td>M · Tab · [ ]</td></tr>
         <tr><td>sound · stats · fullscreen</td><td>K · P · F</td></tr>

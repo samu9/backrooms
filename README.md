@@ -38,6 +38,28 @@ arrows on the minimap and the full map.
 For a single deployment, `npm start` builds the client and serves `dist/` and the relay from one
 port (`PORT=8080 npm start`). If the relay can't be reached, the game falls back to single player.
 
+## The Hunt
+
+A horror game mode for 2–16 players in a room. Press **R** in a room to start a round.
+
+- One player is chosen as **the Entity**: a tall, faceless figure. It waits in the dark for 10 s
+  while everyone else scatters, then hunts at 3.7 m/s. It can't sprint, but **E** lets it
+  **walk through walls** for 2 s (30 s cooldown).
+- Everyone else is a **Wanderer**. Sprinting is limited by stamina (about 6 s, then you're out of
+  breath until it recovers), and the entity can hear you panting.
+- **Caught wanderers become entities.** The hunt snowballs.
+- **Wanderers win** if anyone reaches the **exit door**, a lit doorway 70–100 m away shown on the
+  wanderers' maps, or if anyone is still free when the 5 minutes are up. **The entity wins** if it
+  finds everyone.
+- **Warning signs:** lights stutter and die around an entity, the camcorder picture breaks up as one
+  closes in, and you hear its drone and heavy steps from where it is. Each side only sees its own
+  team on the maps.
+
+The relay is the referee (`server/hunt.ts`): it picks roles, places the exit and the entity's
+spawn, and decides catches (within 1.1 m, with line of sight checked through the same `solid()`
+the game renders) and escapes. `npm test` runs the rules; `HUNT_SECONDS=60 npm run server`
+shortens rounds for testing.
+
 ## How it works
 
 Stack: three.js on WebGL2, hand-written GLSL, Web Audio, Vite + TypeScript (the same approach as
@@ -51,6 +73,7 @@ Synthwave City), plus Playwright for screenshots.
 | Materials | `src/shaders.ts` | Procedural wallpaper (column lines, chevrons, seams, grime, water stains), carpet, 2×4 ft acoustic tiles and prismatic light panels. Fine detail fades out based on how much of the surface each pixel covers, so it doesn't shimmer (moiré). |
 | Props | `src/props.ts` | Furniture is built from boxes. A prop can be half-rendered (wireframe above a moving "streaming" edge, plain untextured grey below it), merged into the surface it touches (its colour turns into carpet, wallpaper or ceiling tile), or covered in wallpaper. Also: doors leading nowhere and stairs into the ceiling. |
 | Post | `src/post.ts` | HDR + MSAA, two-level bloom, ACES tone mapping, yellow/olive grade, composite-video chroma bleed, chromatic aberration, tape jitter, grain, vignette. Resolution scales automatically to keep the frame time under about 18 ms. |
+| The Hunt | `server/hunt.ts`, `src/hunt.ts` | Server-side round state machine and referee; client stamina, phasing, HUD, light-killing entities (shader uniform), dread grade, positional drone/breathing. |
 | Multiplayer | `server/server.ts`, `src/net.ts`, `src/avatars.ts` | WebSocket relay with rooms (max 16), one pose batch per room per tick, snapshot interpolation on the client. Avatars are lit with the prop shader and the textures of the chunk they stand in. |
 | Sound | `src/audio.ts` | Hum from the mains and the ballasts. The nearest panels buzz as HRTF-positioned sources, and the flickering ones crackle. Random events through a synthetic reverb: footsteps that aren't yours, knocking inside walls, distant slams, drones, creaks, and breathing behind you. |
 
@@ -63,4 +86,5 @@ node scripts/shot.mjs --out shots/x --views "prop=3&pname=door"
 node scripts/sheet.mjs shots/x/sheet.png shots/x/*.png     # contact sheet
 node scripts/smoke.mjs                                      # interactive run, errors + stats
 node scripts/mptest.mjs                                     # two players in one room (needs npm run server)
+node scripts/hunttest.mjs                                   # a full hunt round with two players
 ```

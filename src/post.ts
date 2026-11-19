@@ -36,6 +36,9 @@ void main() {
 const finalFrag = /* glsl */ `
 uniform sampler2D tScene; uniform sampler2D tB1; uniform sampler2D tB2;
 uniform vec2 uRes; uniform float uTime; uniform float uVhs; uniform float uExposure; uniform float uFade;
+uniform float uDread;  // 0..1: an entity is near, the tape starts to fail
+uniform float uHunter; // 0..1: we are an entity: see the place drained and red
+uniform float uGlitch; // 0..1: just got caught
 varying vec2 vUv;
 float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
@@ -51,13 +54,18 @@ void main() {
   // tape: per-line horizontal jitter and a slow tracking wobble
   float line = floor(uv.y * uRes.y / 2.0);
   float tf = floor(uTime * 30.0);
-  uv.x += (h21(vec2(line, tf)) - 0.5) * 0.0009 * uVhs;
+  float fail = max(uDread * uDread, uGlitch);
+  uv.x += (h21(vec2(line, tf)) - 0.5) * (0.0009 * uVhs + 0.006 * fail);
+  // tearing bands that roll through the frame as it closes in
+  float tear = step(1.0 - 0.2 * fail, h21(vec2(floor(uv.y * 24.0), tf))) * fail;
+  uv.x += tear * (h21(vec2(tf, floor(uv.y * 24.0))) - 0.5) * 0.05;
+  uv.y += uGlitch * (h21(vec2(tf, 1.0)) - 0.5) * 0.05;
   uv.x += sin(uv.y * 9.0 + uTime * 1.3) * 0.0006 * uVhs;
   float bandOn = step(0.8, h21(vec2(floor(uTime / 6.0), 7.0)));
   float band = smoothstep(0.025, 0.0, abs(uv.y - fract(uTime / 6.0) * 1.3 + 0.15)) * uVhs * bandOn;
   uv.x += band * (h21(vec2(line, tf + 3.0)) - 0.5) * 0.01;
 
-  vec3 c = sceneCA(uv, 0.03 * uVhs + 0.004);
+  vec3 c = sceneCA(uv, 0.03 * uVhs + 0.004 + 0.12 * fail);
   // chroma bleed: luma sharp, chroma smeared to the right like composite video
   vec2 px = vec2(1.0 / uRes.x, 0.0);
   vec3 sm = (texture2D(tScene, uv - px * 2.0).rgb + texture2D(tScene, uv - px * 5.0).rgb + texture2D(tScene, uv - px * 9.0).rgb + c) * 0.25;
@@ -75,11 +83,16 @@ void main() {
   c = mix(vec3(l), c, 0.98);
   c = c * vec3(1.02, 1.0, 0.88) * 0.95 + vec3(0.025, 0.022, 0.01);
   // vignette
-  float v = smoothstep(0.95, 0.25, length(d * vec2(1.0, 0.85)));
+  // the entity's view: drained, rusty, darker at the edges
+  float lh = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(c, vec3(lh * 1.15, lh * 0.82, lh * 0.7), 0.75 * uHunter);
+  c = mix(c, vec3(dot(c, vec3(0.333))), 0.35 * fail);
+  float v = smoothstep(0.95 - 0.25 * max(uHunter, uDread), 0.25, length(d * vec2(1.0, 0.85)));
   c *= mix(0.62, 1.0, v);
   // grain (stronger in the darks) and faint scanlines
   float g = h21(gl_FragCoord.xy + fract(uTime * 7.31) * 100.0) - 0.5;
-  c += g * mix(0.045, 0.025, l);
+  c += g * (mix(0.045, 0.025, l) + 0.14 * fail);
+  c += tear * 0.12;
   c *= 1.0 - 0.035 * uVhs * step(0.5, fract(gl_FragCoord.y * 0.5));
   c += band * 0.03;
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
@@ -128,6 +141,9 @@ export class Post {
       uVhs: { value: 1 },
       uExposure: { value: 1.0 },
       uFade: { value: 1 },
+      uDread: { value: 0 },
+      uHunter: { value: 0 },
+      uGlitch: { value: 0 },
     });
     this.quad = new THREE.Mesh(geo, this.bright);
     this.quad.frustumCulled = false;

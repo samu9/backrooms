@@ -14,6 +14,7 @@ export interface Shared {
   uFogColor: { value: THREE.Color };
   uFogDensity: { value: number };
   uQuality: { value: number };
+  uEnt: { value: THREE.Vector4[] };
 }
 
 export interface LightInfo {

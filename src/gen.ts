@@ -36,14 +36,9 @@ function vnoise1(x: number, salt: number): number {
 
 const mod = (a: number, b: number) => ((a % b) + b) % b;
 
-export const enum ZoneType {
-  Office = 0,
-  Maze = 1,
-  Hall = 2,
-  Void = 3,
-  Weird = 4,
-  Corridor = 5,
-}
+// a plain object rather than an enum, so the relay can import this file under Node's type stripping
+export const ZoneType = { Office: 0, Maze: 1, Hall: 2, Void: 3, Weird: 4, Corridor: 5 } as const;
+export type ZoneType = (typeof ZoneType)[keyof typeof ZoneType];
 
 export interface Zone {
   type: ZoneType;
