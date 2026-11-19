@@ -12,6 +12,7 @@ public sealed class Golden
     public static readonly Golden Instance = Load();
 
     public required JsonElement[] Seeds { get; init; }
+    public required JsonElement[] Chunks { get; init; }
 
     static Golden Load()
     {
@@ -20,10 +21,15 @@ public sealed class Golden
         if (dir == null) throw new FileNotFoundException("tests/fixtures/gen-golden.json.gz not found above " + AppContext.BaseDirectory + " (run npm run gen:fixtures)");
         using var gz = new GZipStream(File.OpenRead(Path.Combine(dir.FullName, "tests", "fixtures", "gen-golden.json.gz")), CompressionMode.Decompress);
         var doc = JsonDocument.Parse(gz);
-        return new Golden { Seeds = doc.RootElement.GetProperty("seeds").EnumerateArray().ToArray() };
+        return new Golden
+        {
+            Seeds = doc.RootElement.GetProperty("seeds").EnumerateArray().ToArray(),
+            Chunks = doc.RootElement.GetProperty("chunks").EnumerateArray().ToArray(),
+        };
     }
 
     public static IEnumerable<object[]> SeedIndices() => Instance.Seeds.Select((_, i) => new object[] { i });
+    public static IEnumerable<object[]> ChunkIndices() => Instance.Chunks.Select((_, i) => new object[] { i });
 }
 
 public class GenParityTests

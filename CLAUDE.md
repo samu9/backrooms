@@ -42,7 +42,15 @@ when running Godot).
 - `npm run typecheck`, `npm test` (rules + AI), `npm run sim` (AI balance, slow)
 - `npm run gen:fixtures`, `npm run godot:test` (C# generator vs the fixtures)
 - `dotnet build godot/Game/Backrooms.sln` builds Core, the tests and the Godot project
-- `godot --headless --path godot/Game --quit-after 30 -- --seed=123` runs the game without a window
+- `godot --headless --path godot/Game -- --seed=123 --autowalk=4` sprints forward 4 s, prints where
+  it ended up and quits (no window needed)
+- `godot --path godot/Game --resolution 1280x720 -- --seed=1 --view=0 --screenshot=out.png` renders
+  one frame and quits. `--view=K` is the web's `?view=K` (same spawn), so it can be compared with
+  `node web/scripts/shot.mjs --views K --params "seed=1"`. Works in WSLg (llvmpipe, slow)
+- Other Game options: `--x= --z= --yaw= --pitch= --radius=`; see the comment at the top of `Main.cs`
+- The fixture script runs the real web `buildChunk` (bundled with three via rolldown), so a change
+  to `web/src/chunk.ts` geometry also needs `npm run gen:fixtures` and the matching C# change in
+  `godot/Core/ChunkData.cs`
 - `npm run build`, then `PORT=5190 npm run server` serves the build and the relay on one port
 - `node web/scripts/smoke.mjs`, `node web/scripts/solotest.mjs`: Playwright against :5190
 - `npm run doc` rebuilds `docs/layout-algorithm.html` from `shared/gen.ts`

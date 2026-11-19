@@ -109,7 +109,9 @@ npm run godot:test     # C# generator vs the fixtures (needs the .NET 8 SDK)
 ```
 
 Open `godot/Game/project.godot` with the Godot 4.7 .NET editor. From the command line:
-`godot --path godot/Game -- --seed=123`.
+`godot --path godot/Game -- --seed=123`. So far you can walk the streamed world with a placeholder
+look: click to capture the mouse, `WASD` to walk, `Shift` to run, `N` noclip, `P` stats, `F`
+fullscreen, `Esc` to release the mouse. `--view=K` starts at the same spot as the web's `?view=K`.
 
 ## How it works
 
