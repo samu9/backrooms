@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Soundscape } from './audio';
 import { ChunkManager, makeMaterials, type Shared } from './chunk';
-import { CELL, findFree, freeDistance, rng, setSeed, solid } from '../shared/gen';
+import { CELL, findFree, freeDistance, rng, setSeed, solid } from '../../shared/gen';
 import { FullMap, Minimap } from './minimap';
 import { Avatars, ExitDoor } from './avatars';
 import { ENTITY_SPEED, Hunt } from './hunt';

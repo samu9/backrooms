@@ -1,8 +1,8 @@
 // CPU entity: pathfinding and senses. Run with: node tests/ai.test.ts
 import assert from 'node:assert/strict';
 import { CELL, setSeed, solid } from '../shared/gen.ts';
-import { EntityAI, type Prey } from '../src/ai/entity.ts';
-import { clearLine, findPath, useSeed, wallAt } from '../src/ai/path.ts';
+import { EntityAI, type Prey } from '../web/src/ai/entity.ts';
+import { clearLine, findPath, useSeed, wallAt } from '../web/src/ai/path.ts';
 
 const SEED = 42;
 setSeed(SEED);

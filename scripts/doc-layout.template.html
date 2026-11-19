@@ -65,7 +65,7 @@
 <body>
 <div class="wrap">
   <h1>How the Backrooms layout is generated</h1>
-  <p class="sub">The algorithm in <code>shared/gen.ts</code> and <code>src/chunk.ts</code>. The pictures on this page come from the real generator code, bundled into this file.</p>
+  <p class="sub">The algorithm in <code>shared/gen.ts</code> and <code>web/src/chunk.ts</code>. The pictures on this page come from the real generator code, bundled into this file.</p>
 
   <div class="tldr">
     <strong>TL;DR</strong>
@@ -179,12 +179,12 @@ zone = (floor(wx / 52), floor(wz / 52))    → cached params for that zone</pre>
   </ul>
 
   <h2 id="geometry">6 · From cells to triangles</h2>
-  <p>A chunk is 64×64 cells (32&nbsp;m). <code>buildChunk</code> (<code>src/chunk.ts</code>) samples <code>solid()</code> and the ceiling height over a <b>96×96</b> window: the chunk plus a 16-cell border on every side.</p>
+  <p>A chunk is 64×64 cells (32&nbsp;m). <code>buildChunk</code> (<code>web/src/chunk.ts</code>) samples <code>solid()</code> and the ceiling height over a <b>96×96</b> window: the chunk plus a 16-cell border on every side.</p>
   <div class="fig"><canvas id="mesh" height="420"></canvas>
     <figcaption id="meshcap">A real chunk from this seed. Each coloured stroke is one merged wall quad. Outlined rectangles are merged ceiling quads.</figcaption></div>
   <ul>
-    <li><b>Walls</b> (<code>src/chunk.ts:144</code>): for each cell edge the chunk owns, a face is emitted where wall meets open space (height = the open cell's ceiling) or where two open cells have different ceilings (a soffit, facing the taller side). Runs of identical faces are merged into one quad.</li>
-    <li><b>Ceilings</b> (<code>src/chunk.ts:126</code>): open cells are greedily merged into rectangles of equal height.</li>
+    <li><b>Walls</b> (<code>web/src/chunk.ts:144</code>): for each cell edge the chunk owns, a face is emitted where wall meets open space (height = the open cell's ceiling) or where two open cells have different ceilings (a soffit, facing the taller side). Runs of identical faces are merged into one quad.</li>
+    <li><b>Ceilings</b> (<code>web/src/chunk.ts:126</code>): open cells are greedily merged into rectangles of equal height.</li>
     <li><b>Floor</b>: one quad for the whole chunk. Walls hide the floor underneath them.</li>
     <li><b>Occupancy texture</b>: the 96×96 window is uploaded as RGBA8 (wall, ceiling height, chair rail). Because of the border, the shader can see the neighbouring chunks' walls for soft shadows and corner darkening.</li>
     <li>Collision, the minimap and the screenshot viewpoints all call the same <code>solid()</code>, so what you see, bump into and map always matches.</li>

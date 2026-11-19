@@ -4,8 +4,8 @@
 // The bot walks to the exit, sprints (with the same stamina rules) when it sees the entity
 // coming, and pants when out of breath.
 import { CELL, findFree, setSeed } from '../shared/gen.ts';
-import { type Difficulty, EntityAI } from '../src/ai/entity.ts';
-import { clearLine, findPath, useSeed, wallAt, type Waypoint } from '../src/ai/path.ts';
+import { type Difficulty, EntityAI } from '../web/src/ai/entity.ts';
+import { clearLine, findPath, useSeed, wallAt, type Waypoint } from '../web/src/ai/path.ts';
 import { HUNT_S, type Hunter, LAYOUT_SOLO, newRound, startRound, tickRound, tryPhase } from '../shared/hunt.ts';
 
 const ROUNDS = Number(process.argv[2] ?? 10);

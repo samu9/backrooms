@@ -1,7 +1,7 @@
 // Office furniture made of boxes, placed the way the Backrooms place things: sunk into the carpet,
 // pushed half into a wall, hanging upside down from the ceiling, a staircase climbing into the tiles.
 import * as THREE from 'three';
-import { CELL, CHUNK_CELLS, ceilingAt, rng, solid } from '../shared/gen';
+import { CELL, CHUNK_CELLS, ceilingAt, rng, solid } from '../../shared/gen';
 
 // [cx, cy, cz, sx, sy, sz, colour]
 export type Box = [number, number, number, number, number, number, number];

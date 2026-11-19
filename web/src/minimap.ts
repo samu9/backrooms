@@ -2,7 +2,7 @@
 // player; each cell a ray reaches is marked as discovered and painted, one pixel per cell, into a
 // small per-chunk canvas. The map is drawn by blitting those chunk canvases, rotated so that the
 // direction you face is always up.
-import { CELL, CHUNK, CHUNK_CELLS, solid } from '../shared/gen';
+import { CELL, CHUNK, CHUNK_CELLS, solid } from '../../shared/gen';
 
 const RAYS = 160;
 const RANGE = 18; // metres
