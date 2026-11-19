@@ -1,0 +1,19 @@
+; Engine configuration file.
+; Godot 4 .NET edition. The C# solution is Backrooms.sln next to this file.
+
+config_version=5
+
+[application]
+
+config/name="The Backrooms"
+config/description="Procedural, infinite Backrooms (Level 0). Desktop client of the web game."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[dotnet]
+
+project/assembly_name="Backrooms"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"

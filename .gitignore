@@ -11,3 +11,10 @@ shots/*
 !shots/final/
 shots/final/*
 !shots/final/sheet.png
+
+# Godot / .NET build output
+godot/**/.godot/
+godot/**/bin/
+godot/**/obj/
+*.csproj.old
+*.user

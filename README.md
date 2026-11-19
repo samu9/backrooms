@@ -91,14 +91,25 @@ also hide, so treat these as a relative scale.
 | `shared/` | The world generator (`gen.ts`) and the hunt rules (`hunt.ts`). Used by the web client, the relay and the tests. |
 | `web/` | The browser client: `web/src/` (three.js), `web/index.html`, `web/vite.config.ts`, and the Playwright scripts in `web/scripts/`. Builds to the root `dist/`. |
 | `server/` | The multiplayer relay and hunt referee. Serves `dist/` too. |
-| `tests/` | Node tests for the rules and the CPU entity (`npm test`, `npm run sim`). |
+| `godot/` | The desktop client, in progress: `Core/` (generation and rules in C#, no Godot dependency), `Core.Tests/`, and the Godot project in `Game/`. |
+| `tests/` | Node tests for the rules and the CPU entity (`npm test`, `npm run sim`), and the generator's golden fixtures (`tests/fixtures/`). |
 | `scripts/` | Builds `docs/layout-algorithm.html` from `shared/gen.ts` (`npm run doc`). |
 | `docs/` | Explainers and plans, including the [Godot port plan](docs/godot-port-plan.html). |
 
-A desktop client in Godot (C#) is planned under `godot/`, next to the web one. It will play in the
-same rooms through the same relay.
-
 The npm scripts need Node 22.6 or newer, because the server and tests run `.ts` files directly.
+
+### The desktop client (Godot)
+
+It's being ported milestone by milestone (see the plan). It will play in the same rooms as the web
+client, through the same relay, so its generator must match `shared/gen.ts` exactly:
+
+```bash
+npm run gen:fixtures   # after changing shared/gen.ts: rewrite tests/fixtures/gen-golden.json.gz
+npm run godot:test     # C# generator vs the fixtures (needs the .NET 8 SDK)
+```
+
+Open `godot/Game/project.godot` with the Godot 4.7 .NET editor. From the command line:
+`godot --path godot/Game -- --seed=123`.
 
 ## How it works
 

@@ -1,0 +1,6 @@
+<!-- World generation, rules and AI: no Godot dependency, so it builds and tests with plain dotnet. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Backrooms.Core</RootNamespace>
+  </PropertyGroup>
+</Project>
