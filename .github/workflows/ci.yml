@@ -15,11 +15,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - run: npm ci
+      # the lockfile records a private mirror (the author's npm config); install the same packages,
+      # same integrity hashes, from the public registry
+      - run: npm ci --registry=https://registry.npmjs.org/ --replace-registry-host=always
       - name: TypeScript (web client, relay, rules)
         run: npm run typecheck && npm test
       - name: Web build
