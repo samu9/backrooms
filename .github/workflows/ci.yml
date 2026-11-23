@@ -19,8 +19,10 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       # the lockfile records a private mirror (the author's npm config); install the same packages,
-      # same integrity hashes, from the public registry
-      - run: npm ci --registry=https://registry.npmjs.org/ --replace-registry-host=always
+      # same integrity hashes, from the public registry (only CI's copy of the lockfile is rewritten)
+      - run: |
+          sed -i -E 's#"resolved": "https://[^"]*/npm/npm-store/#"resolved": "https://registry.npmjs.org/#' package-lock.json
+          npm ci --registry=https://registry.npmjs.org/
       - name: TypeScript (web client, relay, rules)
         run: npm run typecheck && npm test
       - name: Web build
