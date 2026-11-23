@@ -62,6 +62,9 @@ public partial class Main : Node3D
 
     public override void _Ready()
     {
+        // one number format everywhere (an Italian Windows prints 0,5): logs, parsing, protocol
+        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
         var args = ParseArgs();
         int seed = args.TryGetValue("seed", out var s) ? int.Parse(s, CultureInfo.InvariantCulture) : (int)(GD.Randi() % 1_000_000);
         double Num(string k, double d) => args.TryGetValue(k, out var v) ? double.Parse(v, CultureInfo.InvariantCulture) : d;
