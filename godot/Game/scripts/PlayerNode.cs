@@ -27,7 +27,8 @@ public partial class PlayerNode : Node3D
         Apply(Motion.Step(0, 0, 0, false, 0));
     }
 
-    public override void _UnhandledInput(InputEvent e)
+    /// <summary>Called by Main: this node sits in the scene SubViewport, which gets no input of its own.</summary>
+    public void HandleInput(InputEvent e)
     {
         if (e is InputEventMouseMotion mm && Input.MouseMode == Input.MouseModeEnum.Captured)
             Motion.Look(mm.Relative.X, mm.Relative.Y);
