@@ -2,6 +2,7 @@ using System.Globalization;
 using Backrooms.Core;
 using Backrooms.Core.AI;
 using Backrooms.Core.Hunt;
+using Backrooms.Audio;
 using Backrooms.Net;
 using Backrooms.UI;
 using Godot;
@@ -17,6 +18,7 @@ namespace Backrooms;
 ///   --solo=easy|normal|nightmare   alone against the CPU entity (--autostart, --hunt-seconds=S,
 ///                       --quit-on-end print the outcome and quit: for checks without playing)
 ///   --snap=PATH --snap-at=SECS   save a live frame (HUD included) after SECS and quit
+///   --record=PATH       record the master bus to a WAV until quitting (checks without ears)
 ///   --radius=R          chunks kept around the player (default 2)
 ///   --fog=D --q=0|1 --t=SECS   fog density, shadow quality, shader time at start (as the web's ?fog ?q ?t)
 ///   --look=debug        the flat placeholder look instead of the level shader
@@ -25,7 +27,7 @@ namespace Backrooms;
 ///   --screenshot=PATH   build everything in range, render, save a PNG and quit
 ///   --autowalk=SECS     sprint forward for SECS, print where we ended up and quit (headless check)
 /// Keys: click the menu to go in, WASD/arrows, Shift run, N noclip, V camcorder, H overlay, Tab minimap, [ ] zoom,
-/// M full map (C centre), R start the hunt, E phase, P stats, F fullscreen, Esc menu.
+/// M full map (C centre), R start the hunt, E phase, K sound, P stats, F fullscreen, Esc menu.
 ///   --osd=1 --map=1      keep the OSD / minimap in screenshots (the web's ?osd=1 &map=1)
 ///   --menu=1 --fullmap=1 --mark=X,Z;X,Z   screenshots of the menu / the full map / with marks
 /// </summary>
@@ -46,12 +48,13 @@ public partial class Main : Node3D
     Menu menu = null!;
     MapData map = null!;
     readonly MapOverlay overlay = new();
-    bool started, shot, showMenuInShot;
+    bool started, shot, showMenuInShot, soundOff;
     ISession? net;
     HuntClient hunt = null!;
     ExitDoor exitDoor = null!;
     double clockMs;
     bool quitOnEnd, snapping;
+    ISoundscape audio = null!;
     string netError = "", room = "", playerName = "";
     Avatars avatars = null!;
     bool fixedScale;
@@ -152,6 +155,11 @@ public partial class Main : Node3D
         avatars = new Avatars { Name = "Avatars" };
         world.AddChild(avatars);
         avatars.Init(chunks, GD.Load<Shader>("res://shaders/prop.gdshader"));
+        // temporary sound (Core/Audio/SoundBank rendered at startup), behind ISoundscape
+        var sound = new TempSoundscape { Name = "Sound" };
+        world.AddChild(sound);
+        audio = sound;
+        avatars.Footstep += audio.Footstep;
         exitDoor = new ExitDoor { Name = "Exit" };
         world.AddChild(exitDoor);
         exitDoor.Init(avatars);
@@ -189,14 +197,29 @@ public partial class Main : Node3D
         player.NoclipAllowed = () => !hunt.Active;
         quitOnEnd = args.ContainsKey("quit-on-end");
         // a live frame with the HUD, some seconds in (screenshots of a hunt, which --screenshot can't freeze)
+        // what the speakers would get: record the master bus until quitting (checks without ears)
+        if (args.TryGetValue("record", out var rec))
+        {
+            var recorder = new AudioEffectRecord { Format = AudioStreamWav.FormatEnum.Format16Bits };
+            AudioServer.AddBusEffect(0, recorder);
+            recorder.SetRecordingActive(true);
+            TreeExiting += () =>
+            {
+                recorder.SetRecordingActive(false);
+                var err = recorder.GetRecording()?.SaveToWav(rec);
+                GD.Print($"record: {rec} {err}");
+            };
+        }
         if (args.TryGetValue("snap", out var snap))
         {
             started = snapping = true;
+            audio.Start();
             double at = Num("snap-at", 5);
             GetTree().CreateTimer(at).Timeout += () =>
             {
                 var img = GetViewport().GetTexture().GetImage();
                 GD.Print(img.SavePng(snap) == Error.Ok ? $"snap: {snap} at {at}s" : "snap failed");
+                if (audio is TempSoundscape ts) GD.Print($"audio: {ts.Describe()}");
                 GetTree().Quit();
             };
         }
@@ -232,6 +255,7 @@ public partial class Main : Node3D
         menu.Enter += () =>
         {
             Input.MouseMode = Input.MouseModeEnum.Captured;
+            if (!started) audio.Start();
             // single player: the first time in, the hunt starts on its own
             if (net is LocalSession && !started) StartSoloSoon();
             started = true;
@@ -362,6 +386,10 @@ public partial class Main : Node3D
         {
             case Key.R when started: hunt.RequestStart(); break;
             case Key.E: hunt.RequestPhase(); break;
+            case Key.K when started:
+                soundOff = !soundOff;
+                hud.Toast(soundOff ? "SOUND OFF" : "SOUND ON");
+                break;
             case Key.H: hud.Osd.Visible = !hud.Osd.Visible; break;
             case Key.Tab: mini.Visible = !mini.Visible; break;
             case Key.Bracketleft: hud.Minimap.MapScale = Math.Max(1.5f, hud.Minimap.MapScale / 1.4f); break;
@@ -428,6 +456,10 @@ public partial class Main : Node3D
         }
         else hud.Waypoint.Text = "";
 
+        // sound: quiet behind the menu (the web mutes when the pointer is released), K toggles
+        audio.SetMuted(soundOff || !started || menu.Visible);
+        if (player.Last.Footstep) audio.PlayerStep(m.Sprint);
+        audio.Update(m.X, m.Z, m.Yaw, chunks.AllLights(), dtc);
         clockMs += Math.Clamp(delta, 0, 0.25) * 1000;
         hunt.Update(dtc, clockMs);
         hud.ShowHunt(hunt);
@@ -458,6 +490,16 @@ public partial class Main : Node3D
             post.Set("hunter", post.Get("hunter") + (float)(((hunt.IsEntity ? 1 : 0) - post.Get("hunter")) * Math.Min(1, dtc * 2)));
             post.Set("glitch", (float)Math.Max(Math.Min(1, hunt.CaughtFx / 1.2), hunt.Phasing ? 0.3 : 0));
             hud.Room.Text = net.Label;
+            audio.HunterEars = hunt.IsEntity;
+            if (hunt.Active)
+                foreach (var p in net.State.Peers.Values)
+                {
+                    if (!p.Visible) continue;
+                    if (IsEnt(p.Id)) audio.Presence($"ent:{p.Id}", "entity", p.X, p.Z);
+                    else if ((p.F & 1) != 0) audio.Presence($"br:{p.Id}", "breath", p.X, p.Z);
+                }
+            audio.EndFrame();
+            audio.OwnBreath(hunt.IsWanderer ? Math.Max(0, 1 - hunt.Stamina / 3) : 0);
             if (quitOnEnd && hunt.Phase == Phase.End)
             {
                 GD.Print($"hunt: winner {hunt.Winner}, my role {Names.Of(hunt.MyRole)}, banner \"{hunt.BannerTitle}\"");
