@@ -91,7 +91,7 @@ also hide, so treat these as a relative scale.
 | `shared/` | The world generator (`gen.ts`) and the hunt rules (`hunt.ts`). Used by the web client, the relay and the tests. |
 | `web/` | The browser client: `web/src/` (three.js), `web/index.html`, `web/vite.config.ts`, and the Playwright scripts in `web/scripts/`. Builds to the root `dist/`. |
 | `server/` | The multiplayer relay and hunt referee. Serves `dist/` too. |
-| `godot/` | The desktop client, in progress: `Core/` (generation and rules in C#, no Godot dependency), `Core.Tests/`, and the Godot project in `Game/`. |
+| `godot/` | The desktop client: `Core/` (generation, rules, AI, protocol, sound synthesis in C#, no Godot dependency), `Core.Tests/`, and the Godot project in `Game/`. |
 | `tests/` | Node tests for the rules and the CPU entity (`npm test`, `npm run sim`), and the generator's golden fixtures (`tests/fixtures/`). |
 | `scripts/` | Builds `docs/layout-algorithm.html` from `shared/gen.ts` (`npm run doc`). |
 | `docs/` | Explainers and plans, including the [Godot port plan](docs/godot-port-plan.html). |
@@ -100,19 +100,31 @@ The npm scripts need Node 22.6 or newer, because the server and tests run `.ts` 
 
 ### The desktop client (Godot)
 
-It's being ported milestone by milestone (see the plan). It will play in the same rooms as the web
-client, through the same relay, so its generator must match `shared/gen.ts` exactly:
+The same game as an installable desktop app (Godot 4.7, C#), in `godot/`. It has the same world,
+the same look, the same rooms and hunts (web and desktop players meet through the same relay),
+solo play against the CPU entity, the maps and marks. The sound is a temporary version for now.
+
+**Play:** unzip a release build (`backrooms-<version>-linux.zip` / `-windows.zip`) and run
+`backrooms.x86_64` / `Backrooms.exe`. Click the menu to go in; the keys are the ones above.
+To join a room, type it in the menu, or start with
+`Backrooms.exe -- --room=my-room --name=alice --server=ws://your-host:5191/ws`
+(the server URL is remembered; the default is `ws://127.0.0.1:5191/ws`). `--solo=normal` plays
+alone, `--seed=123` picks a world.
+
+**Develop:** open `godot/Game/project.godot` with the Godot 4.7 .NET editor, or run
+`godot --path godot/Game -- --seed=123`. World generation, rules, AI and the rest of the logic are
+in `godot/Core` (plain C#, no Godot), tested with `dotnet test`:
 
 ```bash
-npm run gen:fixtures   # after changing shared/gen.ts: rewrite tests/fixtures/gen-golden.json.gz
-npm run godot:test     # C# generator vs the fixtures (needs the .NET 8 SDK)
+npm run godot:test     # C# tests: generator and chunk parity with the web, rules, AI, map, sound
+npm run gen:fixtures   # after changing shared/gen.ts or web/src/chunk.ts: rewrite the golden fixtures
+npm run godot:sim      # AI balance simulation (compare with npm run sim)
+GODOT=/path/to/godot npm run godot:export   # release builds into godot/build/ (needs export templates)
 ```
 
-Open `godot/Game/project.godot` with the Godot 4.7 .NET editor. From the command line:
-`godot --path godot/Game -- --seed=123`. So far you can walk the streamed world with the level
-shader (materials, panel lighting, soft shadows; no props or camcorder effects yet): click to
-capture the mouse, `WASD` to walk, `Shift` to run, `N` noclip, `P` stats, `F`
-fullscreen, `Esc` to release the mouse. `--view=K` starts at the same spot as the web's `?view=K`.
+The desktop client must generate exactly the same world as `shared/gen.ts` (the relay decides
+catches with it), which the parity tests check against fixtures dumped from the TypeScript.
+Pushing a `v*` tag builds both desktop zips in CI (`.github/workflows/ci.yml`).
 
 ## How it works
 
