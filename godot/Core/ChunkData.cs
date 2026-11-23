@@ -31,6 +31,10 @@ public sealed class ChunkData
     public required List<LightInfo> LightList { get; init; }
     /// <summary>Floor, ceilings and walls, in chunk-local coordinates.</summary>
     public required GeoBuilder Level { get; init; }
+    /// <summary>Furniture, in chunk-local coordinates (may be empty).</summary>
+    public required GeoBuilder Props { get; init; }
+    /// <summary>Where each prop went (world coordinates), as the web's chunk.props.</summary>
+    public required List<PropSpot> PropSpots { get; init; }
 
     static byte Byte(double v) => (byte)Gen.JsRound(v);
 
@@ -162,10 +166,13 @@ public sealed class ChunkData
             }
         }
 
+        var spots = new List<PropSpot>();
+        var props = Backrooms.Core.Props.Build(gen, ci, cj, spots);
+
         return new ChunkData
         {
             Ci = ci, Cj = cj, OriginX = ox, OriginZ = oz, LightBaseI = li0, LightBaseJ = lj0,
-            Occupancy = occ, Lights = lData, LightList = lights, Level = g,
+            Occupancy = occ, Lights = lData, LightList = lights, Level = g, Props = props, PropSpots = spots,
         };
     }
 
