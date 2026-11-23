@@ -54,6 +54,10 @@ when running Godot).
 - Other Game options: `--x= --z= --yaw= --pitch= --radius=`; see the comment at the top of `Main.cs`
 - `godot --headless --path godot/Game -- --solo=nightmare --autostart --quit-on-end` plays a solo
   hunt standing still and prints the outcome; `--snap=out.png --snap-at=SECS` saves a live frame
+  (and prints what the soundscape is playing); `--record=out.wav` records the master bus
+- Sound is temporary: `godot/Core/Audio/SoundBank.cs` renders the web's `audio.ts` recipes into
+  buffers at startup; `Game/scripts/Audio/TempSoundscape.cs` plays them. The game only talks to
+  `ISoundscape`, so a real implementation replaces that one class
 - `npm run godot:sim`: the AI balance simulation in C# (30 rounds per difficulty, ~10 s); compare
   with `npm run sim` (TypeScript). The hunt rules exist twice: `shared/hunt.ts` (relay) and
   `godot/Core/Hunt/HuntRules.cs` (solo in Godot); change both, the tests are ported 1:1

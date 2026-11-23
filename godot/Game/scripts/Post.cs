@@ -23,6 +23,7 @@ public partial class Post : Node
         Scene = new SubViewport
         {
             Name = "Scene",
+            AudioListenerEnable3D = true, // the camera in here is the ear of the 3D sounds
             UseHdr2D = true, // keeps the HDR scene in a float buffer, linear, for the bloom and the grade
             Msaa3D = msaa >= 8 ? Viewport.Msaa.Msaa8X : msaa >= 4 ? Viewport.Msaa.Msaa4X : msaa >= 2 ? Viewport.Msaa.Msaa2X : Viewport.Msaa.Disabled,
             RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
