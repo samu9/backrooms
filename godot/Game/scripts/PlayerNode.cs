@@ -16,6 +16,8 @@ public partial class PlayerNode : Node3D
     public MotionResult Last;
     /// <summary>Scripted input for headless runs: hold "forward" for this many more seconds.</summary>
     public double AutoWalk;
+    /// <summary>A still frame: no time passes (screenshots, like the web's ?shot).</summary>
+    public bool Frozen;
 
     public void Init(PlayerMotion motion)
     {
@@ -42,7 +44,7 @@ public partial class PlayerNode : Node3D
 
     public override void _Process(double delta)
     {
-        double dt = Math.Clamp(delta, 0, 0.1);
+        double dt = Frozen ? 0 : Math.Clamp(delta, 0, 0.1);
         Time += dt;
         int ix = 0, iz = 0;
         if (Down(Key.W, Key.Up)) iz -= 1;
