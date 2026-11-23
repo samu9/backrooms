@@ -45,10 +45,20 @@ public class ChunkParityTests
             .Select(e => new LightInfo(e[0].GetDouble(), e[1].GetDouble(), e[2].GetDouble(), e[3].GetInt32())).ToList();
         Assert.Equal(want, c.LightList);
 
-        var g = c.Level;
-        Assert.Equal(fx.GetProperty("vertices").GetInt32(), g.VertexCount);
-        Assert.Equal(fx.GetProperty("indices").GetInt32(), g.Idx.Count);
-        var h = fx.GetProperty("hash");
+        CheckGeometry($"{at} level", c.Level, fx.GetProperty("vertices").GetInt32(), fx.GetProperty("indices").GetInt32(), fx.GetProperty("hash"));
+
+        var wantSpots = fx.GetProperty("propSpots").EnumerateArray()
+            .Select(e => new PropSpot(e[0].GetDouble(), e[1].GetDouble(), e[2].GetString()!)).ToList();
+        Assert.Equal(wantSpots, c.PropSpots);
+        var p = fx.GetProperty("props");
+        if (p.ValueKind == System.Text.Json.JsonValueKind.Null) Assert.Equal(0, c.Props.VertexCount);
+        else CheckGeometry($"{at} props", c.Props, p.GetProperty("vertices").GetInt32(), p.GetProperty("indices").GetInt32(), p.GetProperty("hash"));
+    }
+
+    static void CheckGeometry(string at, GeoBuilder g, int vertices, int indices, System.Text.Json.JsonElement h)
+    {
+        Assert.True(vertices == g.VertexCount, $"{at}: {g.VertexCount} vertices, want {vertices}");
+        Assert.True(indices == g.Idx.Count, $"{at}: {g.Idx.Count} indices, want {indices}");
         var got = new Dictionary<string, uint>
         {
             ["position"] = Hash(g.Pos), ["normal"] = Hash(g.Nrm), ["aCol"] = Hash(g.Col),

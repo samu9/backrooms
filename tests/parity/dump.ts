@@ -155,6 +155,16 @@ const chunks = [1, -1000].flatMap((seed) => {
     const geo = c.group.children[0].geometry;
     const attr = (k: string) => geo.getAttribute(k).array as Float32Array;
     const idx = Uint32Array.from(geo.index.array as ArrayLike<number>);
+    const hashes = (g: any) => {
+      if (!g) return null;
+      const a = (k: string) => g.getAttribute(k).array as Float32Array;
+      const ix = Uint32Array.from(g.index.array as ArrayLike<number>);
+      return {
+        vertices: a('position').length / 3,
+        indices: ix.length,
+        hash: { position: f32hash(a('position')), normal: f32hash(a('normal')), aCol: f32hash(a('aCol')), aA: f32hash(a('aA')), aB: f32hash(a('aB')), index: fnv(new Uint8Array(ix.buffer)) },
+      };
+    };
     const out = {
       seed,
       ci,
@@ -173,6 +183,8 @@ const chunks = [1, -1000].flatMap((seed) => {
         aB: f32hash(attr('aB')),
         index: fnv(new Uint8Array(idx.buffer)),
       },
+      props: hashes(c.group.children[1]?.geometry),
+      propSpots: c.props.map((p: { x: number; z: number; name: string }) => [p.x, p.z, p.name]),
     };
     c.dispose();
     return out;
