@@ -52,6 +52,13 @@ when running Godot).
   one frame and quits. `--view=K` is the web's `?view=K` (same spawn), so it can be compared with
   `node web/scripts/shot.mjs --views K --params "seed=1"`. Works in WSLg (llvmpipe, slow)
 - Other Game options: `--x= --z= --yaw= --pitch= --radius=`; see the comment at the top of `Main.cs`
+- `godot --headless --path godot/Game -- --solo=nightmare --autostart --quit-on-end` plays a solo
+  hunt standing still and prints the outcome; `--snap=out.png --snap-at=SECS` saves a live frame
+- `npm run godot:sim`: the AI balance simulation in C# (30 rounds per difficulty, ~10 s); compare
+  with `npm run sim` (TypeScript). The hunt rules exist twice: `shared/hunt.ts` (relay) and
+  `godot/Core/Hunt/HuntRules.cs` (solo in Godot); change both, the tests are ported 1:1
+- `GODOT=… node web/scripts/mixedtest.mjs`: a browser and a headless Godot client in one room
+  through the relay (needs `PORT=5190 npm run server` on a fresh `npm run build`)
 - The fixture script runs the real web `buildChunk` (bundled with three via rolldown), so a change
   to `web/src/chunk.ts` geometry also needs `npm run gen:fixtures` and the matching C# change in
   `godot/Core/ChunkData.cs`

@@ -20,6 +20,10 @@ public partial class PlayerNode : Node3D
     public bool Frozen;
     /// <summary>Off while the menu or the full map has the keyboard.</summary>
     public bool InputEnabled = true;
+    /// <summary>The hunt freezes the entity during the countdown.</summary>
+    public Func<bool>? Blocked;
+    /// <summary>No noclip during a hunt.</summary>
+    public Func<bool> NoclipAllowed = () => true;
 
     public void Init(PlayerMotion motion)
     {
@@ -36,7 +40,7 @@ public partial class PlayerNode : Node3D
             Motion.Look(mm.Relative.X, mm.Relative.Y);
         else if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
-            if (k.PhysicalKeycode == Key.N) Motion.Noclip = !Motion.Noclip;
+            if (k.PhysicalKeycode == Key.N && NoclipAllowed()) Motion.Noclip = !Motion.Noclip;
             if (k.PhysicalKeycode == Key.Escape) Input.MouseMode = Input.MouseModeEnum.Visible;
         }
     }
@@ -57,6 +61,7 @@ public partial class PlayerNode : Node3D
             if (Down(Key.D, Key.Right)) ix += 1;
             run = Input.IsPhysicalKeyPressed(Key.Shift);
         }
+        if (Blocked?.Invoke() ?? false) ix = iz = 0;
         if (AutoWalk > 0)
         {
             AutoWalk -= dt;

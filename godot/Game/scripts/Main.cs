@@ -1,5 +1,7 @@
 using System.Globalization;
 using Backrooms.Core;
+using Backrooms.Core.AI;
+using Backrooms.Core.Hunt;
 using Backrooms.Net;
 using Backrooms.UI;
 using Godot;
@@ -12,6 +14,9 @@ namespace Backrooms;
 ///   --view=K            spawn at the K-th long-sight-line viewpoint (same as the web's ?view=K)
 ///   --x= --z= --yaw= --pitch=   spawn position / direction
 ///   --room=NAME --name=N --server=ws://host:5191/ws   join a multiplayer room on the relay
+///   --solo=easy|normal|nightmare   alone against the CPU entity (--autostart, --hunt-seconds=S,
+///                       --quit-on-end print the outcome and quit: for checks without playing)
+///   --snap=PATH --snap-at=SECS   save a live frame (HUD included) after SECS and quit
 ///   --radius=R          chunks kept around the player (default 2)
 ///   --fog=D --q=0|1 --t=SECS   fog density, shadow quality, shader time at start (as the web's ?fog ?q ?t)
 ///   --look=debug        the flat placeholder look instead of the level shader
@@ -20,7 +25,7 @@ namespace Backrooms;
 ///   --screenshot=PATH   build everything in range, render, save a PNG and quit
 ///   --autowalk=SECS     sprint forward for SECS, print where we ended up and quit (headless check)
 /// Keys: click the menu to go in, WASD/arrows, Shift run, N noclip, V camcorder, H overlay, Tab minimap, [ ] zoom,
-/// M full map (C centre), P stats, F fullscreen, Esc menu.
+/// M full map (C centre), R start the hunt, E phase, P stats, F fullscreen, Esc menu.
 ///   --osd=1 --map=1      keep the OSD / minimap in screenshots (the web's ?osd=1 &map=1)
 ///   --menu=1 --fullmap=1 --mark=X,Z;X,Z   screenshots of the menu / the full map / with marks
 /// </summary>
@@ -42,7 +47,11 @@ public partial class Main : Node3D
     MapData map = null!;
     readonly MapOverlay overlay = new();
     bool started, shot, showMenuInShot;
-    NetClient? net;
+    ISession? net;
+    HuntClient hunt = null!;
+    ExitDoor exitDoor = null!;
+    double clockMs;
+    bool quitOnEnd, snapping;
     string netError = "", room = "", playerName = "";
     Avatars avatars = null!;
     bool fixedScale;
@@ -67,7 +76,7 @@ public partial class Main : Node3D
             {
                 // Connect never resumes on the main thread, so waiting here can't deadlock
                 seed = Task.Run(() => n.Connect(url, room, playerName, want)).GetAwaiter().GetResult();
-                net = n;
+                net = new RelaySession(n, room);
                 SaveSetting("name", playerName);
             }
             catch (Exception e)
@@ -79,13 +88,18 @@ public partial class Main : Node3D
         }
 
         var gen = new Gen(seed);
+        // single player against the CPU entity: same rules, run in the game
+        string solo = args.GetValueOrDefault("solo", "");
+        if (net == null && room == "" && !args.ContainsKey("screenshot") && Enum.TryParse<Difficulty>(solo, true, out var difficulty))
+            net = new LocalSession(difficulty, gen);
+        if (args.TryGetValue("hunt-seconds", out var hs)) HuntRules.HuntS = double.Parse(hs, CultureInfo.InvariantCulture);
         var motion = new PlayerMotion(gen);
         if (args.TryGetValue("view", out var view))
             (motion.X, motion.Z, motion.Yaw) = Viewpoints.Find(gen, int.Parse(view, CultureInfo.InvariantCulture));
         else
         {
             // in a room, spread arrivals out a little so people don't spawn inside each other
-            double jitter = net != null ? 5 : 0;
+            double jitter = net is RelaySession ? 5 : 0;
             (motion.X, motion.Z) = gen.FindFree(Num("x", 0) + (GD.Randf() - 0.5) * jitter, Num("z", 0) + (GD.Randf() - 0.5) * jitter, 2);
         }
         if (args.ContainsKey("x") && args.ContainsKey("z"))
@@ -138,6 +152,9 @@ public partial class Main : Node3D
         avatars = new Avatars { Name = "Avatars" };
         world.AddChild(avatars);
         avatars.Init(chunks, GD.Load<Shader>("res://shaders/prop.gdshader"));
+        exitDoor = new ExitDoor { Name = "Exit" };
+        world.AddChild(exitDoor);
+        exitDoor.Init(avatars);
 
         // overlay: OSD, minimap, full map, toasts, menu (web/index.html)
         map = new MapData(gen);
@@ -152,9 +169,47 @@ public partial class Main : Node3D
         menuLayer.AddChild(menu);
         AddChild(menuLayer);
         menu.Init(room, playerName);
-        if (net != null)
+        // the hunt (web/src/hunt.ts): roles, stamina, phasing, banners
+        hunt = new HuntClient(net?.State, net != null ? net.Send : null) { Solo = net is LocalSession };
+        hunt.Toast += hud.Toast;
+        hunt.Teleport += (x, z) =>
         {
-            net.Poll(Time.GetTicksMsec());
+            (motion.X, motion.Z) = (x, z);
+            motion.Vx = motion.Vz = 0;
+        };
+        // surfacing inside a wall: step out to the nearest free spot
+        hunt.PhaseEnded += () =>
+        {
+            if (motion.Collides(motion.X, motion.Z)) (motion.X, motion.Z) = gen.FindFree(motion.X, motion.Z, 1);
+        };
+        motion.SprintGate = (want, moving, dt) => hunt.SprintGate(want, moving, dt) && !hunt.IsEntity;
+        motion.FixedSpeed = () => hunt.IsEntity ? HuntClient.EntitySpeed : null;
+        motion.Ghost = () => hunt.Phasing;
+        player.Blocked = () => hunt.Frozen;
+        player.NoclipAllowed = () => !hunt.Active;
+        quitOnEnd = args.ContainsKey("quit-on-end");
+        // a live frame with the HUD, some seconds in (screenshots of a hunt, which --screenshot can't freeze)
+        if (args.TryGetValue("snap", out var snap))
+        {
+            started = snapping = true;
+            double at = Num("snap-at", 5);
+            GetTree().CreateTimer(at).Timeout += () =>
+            {
+                var img = GetViewport().GetTexture().GetImage();
+                GD.Print(img.SavePng(snap) == Error.Ok ? $"snap: {snap} at {at}s" : "snap failed");
+                GetTree().Quit();
+            };
+        }
+
+        if (net is LocalSession ls)
+        {
+            menu.Hint.Text = $"alone, {ls.Difficulty.ToString().ToLowerInvariant()}: something else is in here with you";
+            foreach (var p in net.State.Peers.Values) avatars.Add(p);
+            if (args.ContainsKey("autostart")) StartSoloSoon();
+        }
+        else if (net != null)
+        {
+            net.Tick(clockMs);
             menu.Hint.Text = $"in room \"{room}\" with {net.State.Peers.Count} other(s) · seed {seed}";
             foreach (var p in net.State.Peers.Values) avatars.Add(p);
             net.State.Joined += p =>
@@ -177,6 +232,8 @@ public partial class Main : Node3D
         menu.Enter += () =>
         {
             Input.MouseMode = Input.MouseModeEnum.Captured;
+            // single player: the first time in, the hunt starts on its own
+            if (net is LocalSession && !started) StartSoloSoon();
             started = true;
         };
         menu.Join += (r, n) => Relaunch(new() { ["room"] = r, ["name"] = n });
@@ -262,6 +319,8 @@ public partial class Main : Node3D
 
     public override void _ExitTree() => net?.Dispose();
 
+    void StartSoloSoon() => GetTree().CreateTimer(1.5).Timeout += hunt.RequestStart;
+
     static void SaveSetting(string key, string value)
     {
         var cfg = new ConfigFile();
@@ -301,6 +360,8 @@ public partial class Main : Node3D
         var mini = hud.Minimap.GetParent<Control>();
         switch (k.PhysicalKeycode)
         {
+            case Key.R when started: hunt.RequestStart(); break;
+            case Key.E: hunt.RequestPhase(); break;
             case Key.H: hud.Osd.Visible = !hud.Osd.Visible; break;
             case Key.Tab: mini.Visible = !mini.Visible; break;
             case Key.Bracketleft: hud.Minimap.MapScale = Math.Max(1.5f, hud.Minimap.MapScale / 1.4f); break;
@@ -333,7 +394,7 @@ public partial class Main : Node3D
         var m = player.Motion;
         // the menu shows whenever the mouse is free and the map isn't open (pointer lock on the web)
         bool captured = Input.MouseMode == Input.MouseModeEnum.Captured;
-        menu.Visible = (!shot || showMenuInShot) && !captured && !hud.FullMap.Open;
+        menu.Visible = (!shot || showMenuInShot) && !snapping && !captured && !hud.FullMap.Open;
         player.InputEnabled = captured && !hud.FullMap.Open;
         if (!frozenTime) time += Math.Clamp(delta, 0, 0.1);
         RenderingServer.GlobalShaderParameterSet("br_time", time % 4096);
@@ -367,16 +428,41 @@ public partial class Main : Node3D
         }
         else hud.Waypoint.Text = "";
 
+        clockMs += Math.Clamp(delta, 0, 0.25) * 1000;
+        hunt.Update(dtc, clockMs);
+        hud.ShowHunt(hunt);
         if (net != null)
         {
-            double now = Time.GetTicksMsec();
-            if (net.State.Pose(now, m.X, m.Z, m.Yaw, m.Pitch, player.Last.Moving) is { } pose) net.Send(pose);
-            net.Poll(now);
-            net.State.Sample(now);
-            avatars.Update(net.State.Peers.Values, m.X, m.Z);
-            overlay.Others = net.State.Peers.Values.Where(p => p.Visible)
+            if (hunt.Active) m.Noclip = false;
+            net.Pose(clockMs, m.X, m.Z, m.Yaw, m.Pitch, player.Last.Moving, hunt.Flags);
+            net.Tick(clockMs);
+            bool IsEnt(int id) => hunt.Active && hunt.RoleOf(id) == Role.Entity;
+            avatars.Update(net.State.Peers.Values, m.X, m.Z, IsEnt);
+            // in a hunt you only see your own side on the maps; wanderers also see the exit
+            bool mine = hunt.MyRole == Role.Entity;
+            overlay.Others = net.State.Peers.Values.Where(p => p.Visible && (!hunt.Active || IsEnt(p.Id) == mine))
                 .Select(p => new MapOverlay.Other(p.X, p.Z, p.Yaw, Color.FromHtml(p.Color), p.Name)).ToList();
-            hud.Room.Text = net.Connected ? $"ROOM {room.ToUpperInvariant()} · {net.State.Peers.Count + 1}" : "SIGNAL LOST";
+            overlay.Exit = hunt.Active && !mine ? hunt.Exit : null;
+            exitDoor.Show(hunt.Active ? hunt.Exit : null);
+            // entities kill the lights around them (theirs and ours)
+            var ents = net.State.Peers.Values.Where(p => p.Visible && IsEnt(p.Id)).Select(p => (p.X, p.Z)).ToList();
+            if (hunt.IsEntity) ents.Insert(0, (m.X, m.Z));
+            for (int i = 0; i < 4; i++)
+                RenderingServer.GlobalShaderParameterSet($"br_ent{i}", i < ents.Count ? new Vector4((float)ents[i].X, (float)ents[i].Z, 1, 0) : Vector4.Zero);
+            // dread: the tape fails as an entity closes in on a wanderer
+            double near = double.PositiveInfinity;
+            if (!hunt.IsEntity)
+                foreach (var (x, z) in ents) near = Math.Min(near, Math.Sqrt((x - m.X) * (x - m.X) + (z - m.Z) * (z - m.Z)));
+            double dread = hunt.IsWanderer && hunt.Phase == Phase.Hunt ? Math.Clamp((14 - near) / 12, 0, 1) : 0;
+            post.Set("dread", post.Get("dread") + (float)((dread - post.Get("dread")) * Math.Min(1, dtc * 3)));
+            post.Set("hunter", post.Get("hunter") + (float)(((hunt.IsEntity ? 1 : 0) - post.Get("hunter")) * Math.Min(1, dtc * 2)));
+            post.Set("glitch", (float)Math.Max(Math.Min(1, hunt.CaughtFx / 1.2), hunt.Phasing ? 0.3 : 0));
+            hud.Room.Text = net.Label;
+            if (quitOnEnd && hunt.Phase == Phase.End)
+            {
+                GD.Print($"hunt: winner {hunt.Winner}, my role {Names.Of(hunt.MyRole)}, banner \"{hunt.BannerTitle}\"");
+                GetTree().Quit();
+            }
         }
         else hud.Room.Text = netError != "" ? "OFFLINE" : "";
 
@@ -395,6 +481,7 @@ public partial class Main : Node3D
         if (autoWalking && player.AutoWalk <= 0)
         {
             autoWalking = false;
+            if (net is LocalSession sol) GD.Print($"solo: phase {Names.Of(hunt.Phase)}, role {Names.Of(hunt.MyRole)}, entity {sol.Ai.State} at ({sol.Ai.X:0.0}, {sol.Ai.Z:0.0})");
             GD.Print($"autowalk: ended at ({m.X:0.00}, {m.Z:0.00}), inside a wall: {m.Collides(m.X, m.Z)}, chunks {chunks.Chunks.Count}");
             if (net != null)
                 GD.Print($"net: room {room} seed {chunks.Gen.Seed} id {net.State.Id} connected {net.Connected}, peers: "
