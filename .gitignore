@@ -18,3 +18,6 @@ godot/**/bin/
 godot/**/obj/
 *.csproj.old
 *.user
+
+# Godot exports
+godot/build/

@@ -15,7 +15,8 @@
     "sim": "node tests/ai.sim.ts 30",
     "gen:fixtures": "node tests/parity/dump.ts",
     "godot:test": "dotnet test godot/Core.Tests --filter Category!=Sim",
-    "godot:sim": "SIM_ROUNDS=30 dotnet test godot/Core.Tests --filter Category=Sim --logger \"console;verbosity=detailed\""
+    "godot:sim": "SIM_ROUNDS=30 dotnet test godot/Core.Tests --filter Category=Sim --logger \"console;verbosity=detailed\"",
+    "godot:export": "node scripts/godot-export.mjs"
   },
   "author": "",
   "license": "ISC",

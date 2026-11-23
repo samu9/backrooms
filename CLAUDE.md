@@ -66,6 +66,11 @@ when running Godot).
 - The fixture script runs the real web `buildChunk` (bundled with three via rolldown), so a change
   to `web/src/chunk.ts` geometry also needs `npm run gen:fixtures` and the matching C# change in
   `godot/Core/ChunkData.cs`
+- `GODOT=… npm run godot:export [linux windows]`: desktop release builds into `godot/build/`
+  (version copied from `package.json` into `project.godot` and `export_presets.cfg`). Needs the
+  Godot 4.7.2 .NET export templates; `XDG_DATA_HOME` can point at a folder holding
+  `godot/export_templates/4.7.2.stable.mono`. CI (`.github/workflows/ci.yml`) runs both test
+  suites on every push and builds the zips on `v*` tags
 - `npm run build`, then `PORT=5190 npm run server` serves the build and the relay on one port
 - `node web/scripts/smoke.mjs`, `node web/scripts/solotest.mjs`: Playwright against :5190
 - `npm run doc` rebuilds `docs/layout-algorithm.html` from `shared/gen.ts`
