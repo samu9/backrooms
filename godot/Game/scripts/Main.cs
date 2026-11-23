@@ -12,10 +12,11 @@ namespace Backrooms;
 ///   --radius=R          chunks kept around the player (default 2)
 ///   --fog=D --q=0|1 --t=SECS   fog density, shadow quality, shader time at start (as the web's ?fog ?q ?t)
 ///   --look=debug        the flat placeholder look instead of the level shader
+///   --vhs=0|1 --exp=E --scale=S --msaa=N   camcorder effects, exposure, render scale (fixed), MSAA
 ///   --prop=K [--pname=NAME]   stand next to the K-th prop near the spawn (the web's ?prop=K&pname=)
 ///   --screenshot=PATH   build everything in range, render, save a PNG and quit
 ///   --autowalk=SECS     sprint forward for SECS, print where we ended up and quit (headless check)
-/// Keys: click to capture the mouse, WASD/arrows, Shift run, N noclip, P stats, F fullscreen, Esc release.
+/// Keys: click to capture the mouse, WASD/arrows, Shift run, N noclip, V camcorder, P stats, F fullscreen, Esc release.
 /// </summary>
 public partial class Main : Node3D
 {
@@ -29,6 +30,9 @@ public partial class Main : Node3D
     bool autoWalking;
     double time;
     bool frozenTime;
+    Post post = null!;
+    bool fixedScale;
+    double frameAvg = 16, statT;
 
     public override void _Ready()
     {
@@ -57,15 +61,25 @@ public partial class Main : Node3D
         frozenTime = args.ContainsKey("screenshot"); // like the web's ?shot: a still frame at time t
         RenderingServer.GlobalShaderParameterSet("br_time", time % 4096);
 
-        // the shaders output linear HDR; tone mapping here until the camcorder post is ported (M5).
+        // the 3D world renders into the post pipeline's HDR viewport; the camcorder pass does the rest
+        post = new Post { Name = "Post" };
+        AddChild(post);
+        fixedScale = args.ContainsKey("scale") || frozenTime;
+        post.Scale = (float)Num("scale", frozenTime ? 1 : 0.85);
+        post.Init((int)Num("msaa", 4));
+        post.Set("vhs", (float)Num("vhs", 1));
+        post.Set("exposure", (float)Num("exp", 1));
+        var world = post.Scene;
+
+        // the shaders output linear HDR: no tone mapping here (the camcorder pass does ACES).
         // The background colour is linear in the web (fog * 0.4); Godot's is sRGB.
-        AddChild(new WorldEnvironment
+        world.AddChild(new WorldEnvironment
         {
             Environment = new Godot.Environment
             {
                 BackgroundMode = Godot.Environment.BGMode.Color,
                 BackgroundColor = (FogColor * 0.4f).LinearToSrgb(),
-                TonemapMode = Godot.Environment.ToneMapper.Aces,
+                TonemapMode = Godot.Environment.ToneMapper.Linear,
             },
         });
 
@@ -73,10 +87,10 @@ public partial class Main : Node3D
         chunks = new ChunkManager { Name = "Chunks", Radius = (int)Num("radius", 2) };
         chunks.Init(gen, GD.Load<Shader>(look == "debug" ? "res://shaders/level_debug.gdshader" : "res://shaders/level.gdshader"),
             look == "debug" ? null : GD.Load<Shader>("res://shaders/prop.gdshader"));
-        AddChild(chunks);
+        world.AddChild(chunks);
 
         player = new PlayerNode { Name = "Player" };
-        AddChild(player);
+        world.AddChild(player);
         player.Init(motion);
 
         stats = GetNode<Label>("UI/Info");
@@ -93,7 +107,7 @@ public partial class Main : Node3D
         if (args.TryGetValue("screenshot", out var path))
         {
             screenshot = path;
-            screenshotFrames = 3;
+            screenshotFrames = 15; // the bloom chain settles over a few frames
             player.Frozen = true;
             stats.Visible = args.ContainsKey("stats");
         }
@@ -143,8 +157,11 @@ public partial class Main : Node3D
 
     public override void _UnhandledInput(InputEvent e)
     {
+        // the player lives inside the scene SubViewport, which gets no input events of its own
+        player.HandleInput(e);
         if (e is not InputEventKey { Pressed: true, Echo: false } k) return;
         if (k.PhysicalKeycode == Key.P) stats.Visible = !stats.Visible;
+        if (k.PhysicalKeycode == Key.V) post.Set("vhs", post.Get("vhs") > 0.5f ? 0 : 1);
         if (k.PhysicalKeycode == Key.F)
             DisplayServer.WindowSetMode(DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Fullscreen ? DisplayServer.WindowMode.Windowed : DisplayServer.WindowMode.Fullscreen);
     }
@@ -154,10 +171,24 @@ public partial class Main : Node3D
         var m = player.Motion;
         if (!frozenTime) time += Math.Clamp(delta, 0, 0.1);
         RenderingServer.GlobalShaderParameterSet("br_time", time % 4096);
+        post.Set("time", (float)time);
         chunks.UpdateAround(m.X, m.Z);
 
+        // dynamic resolution: keep frames under ~18 ms (same thresholds as the web)
+        frameAvg = frameAvg * 0.95 + delta * 1000 * 0.05;
+        if (!fixedScale && (statT += delta) > 1.5)
+        {
+            statT = 0;
+            float ns = frameAvg > 19 ? Math.Max(0.5f, post.Scale - 0.1f) : frameAvg < 13 ? Math.Min(1f, post.Scale + 0.05f) : post.Scale;
+            if (ns != post.Scale)
+            {
+                post.Scale = ns;
+                post.Resize();
+            }
+        }
+
         if (stats.Visible)
-            stats.Text = $"{Engine.GetFramesPerSecond():0} fps · chunks {chunks.Chunks.Count} · calls {Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0}"
+            stats.Text = $"{1000 / frameAvg:0} fps · scale {post.Scale:0.00} · chunks {chunks.Chunks.Count} · calls {Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0}"
                 + $" · tris {Performance.GetMonitor(Performance.Monitor.RenderTotalPrimitivesInFrame) / 1000:0.0}k · {m.X:0.0}, {m.Z:0.0}{(m.Noclip ? " · noclip" : "")}";
 
         if (screenshot != null && screenshotFrames >= 0 && screenshotFrames-- == 0)
