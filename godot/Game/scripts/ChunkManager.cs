@@ -107,8 +107,8 @@ public partial class ChunkManager : Node3D
         var occ = ImageTexture.CreateFromImage(Image.CreateFromData(Gen.Tex, Gen.Tex, false, Image.Format.Rgba8, c.Occupancy));
         var lights = ImageTexture.CreateFromImage(Image.CreateFromData(ChunkData.LightTex, ChunkData.LightTex, false, Image.Format.Rgba8, c.Lights));
         var mat = new ShaderMaterial { Shader = shader };
-        mat.SetShaderParameter("occ", occ);
-        mat.SetShaderParameter("lights", lights);
+        mat.SetShaderParameter("occ_tex", occ);
+        mat.SetShaderParameter("lights_tex", lights);
         mat.SetShaderParameter("chunk_origin", new Vector2((float)c.OriginX, (float)c.OriginZ));
         mat.SetShaderParameter("light_base", new Vector2(c.LightBaseI, c.LightBaseJ));
         var node = new MeshInstance3D
