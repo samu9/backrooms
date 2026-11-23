@@ -1,5 +1,6 @@
 using System.Globalization;
 using Backrooms.Core;
+using Backrooms.Net;
 using Backrooms.UI;
 using Godot;
 
@@ -10,6 +11,7 @@ namespace Backrooms;
 ///   --seed=N            world seed (default: random)
 ///   --view=K            spawn at the K-th long-sight-line viewpoint (same as the web's ?view=K)
 ///   --x= --z= --yaw= --pitch=   spawn position / direction
+///   --room=NAME --name=N --server=ws://host:5191/ws   join a multiplayer room on the relay
 ///   --radius=R          chunks kept around the player (default 2)
 ///   --fog=D --q=0|1 --t=SECS   fog density, shadow quality, shader time at start (as the web's ?fog ?q ?t)
 ///   --look=debug        the flat placeholder look instead of the level shader
@@ -40,6 +42,9 @@ public partial class Main : Node3D
     MapData map = null!;
     readonly MapOverlay overlay = new();
     bool started, shot, showMenuInShot;
+    NetClient? net;
+    string netError = "", room = "", playerName = "";
+    Avatars avatars = null!;
     bool fixedScale;
     double frameAvg = 16, statT;
 
@@ -49,12 +54,40 @@ public partial class Main : Node3D
         int seed = args.TryGetValue("seed", out var s) ? int.Parse(s, CultureInfo.InvariantCulture) : (int)(GD.Randi() % 1_000_000);
         double Num(string k, double d) => args.TryGetValue(k, out var v) ? double.Parse(v, CultureInfo.InvariantCulture) : d;
 
+        // multiplayer: join a room before building anything, the room decides the seed
+        room = args.GetValueOrDefault("room", "").Trim();
+        playerName = PlayerName(args);
+        if (room != "" && !args.ContainsKey("screenshot"))
+        {
+            var url = args.GetValueOrDefault("server") is { Length: > 0 } u ? u : LoadSetting("server", NetClient.DefaultUrl);
+            if (args.ContainsKey("server")) SaveSetting("server", url);
+            var n = new NetClient();
+            int? want = args.ContainsKey("seed") ? seed : null;
+            try
+            {
+                // Connect never resumes on the main thread, so waiting here can't deadlock
+                seed = Task.Run(() => n.Connect(url, room, playerName, want)).GetAwaiter().GetResult();
+                net = n;
+                SaveSetting("name", playerName);
+            }
+            catch (Exception e)
+            {
+                netError = e.Message;
+                n.Dispose();
+                GD.PushWarning($"multiplayer unavailable, playing alone: {netError}");
+            }
+        }
+
         var gen = new Gen(seed);
         var motion = new PlayerMotion(gen);
         if (args.TryGetValue("view", out var view))
             (motion.X, motion.Z, motion.Yaw) = Viewpoints.Find(gen, int.Parse(view, CultureInfo.InvariantCulture));
         else
-            (motion.X, motion.Z) = gen.FindFree(Num("x", 0), Num("z", 0), 2);
+        {
+            // in a room, spread arrivals out a little so people don't spawn inside each other
+            double jitter = net != null ? 5 : 0;
+            (motion.X, motion.Z) = gen.FindFree(Num("x", 0) + (GD.Randf() - 0.5) * jitter, Num("z", 0) + (GD.Randf() - 0.5) * jitter, 2);
+        }
         if (args.ContainsKey("x") && args.ContainsKey("z"))
             (motion.X, motion.Z) = (Num("x", 0), Num("z", 0));
         motion.Yaw = Num("yaw", motion.Yaw);
@@ -102,6 +135,10 @@ public partial class Main : Node3D
         world.AddChild(player);
         player.Init(motion);
 
+        avatars = new Avatars { Name = "Avatars" };
+        world.AddChild(avatars);
+        avatars.Init(chunks, GD.Load<Shader>("res://shaders/prop.gdshader"));
+
         // overlay: OSD, minimap, full map, toasts, menu (web/index.html)
         map = new MapData(gen);
         var mapTex = new MapTextures(map);
@@ -114,7 +151,29 @@ public partial class Main : Node3D
         var menuLayer = new CanvasLayer { Name = "MenuLayer", Layer = 2 };
         menuLayer.AddChild(menu);
         AddChild(menuLayer);
-        menu.Init(args.GetValueOrDefault("room", ""), PlayerName(args));
+        menu.Init(room, playerName);
+        if (net != null)
+        {
+            net.Poll(Time.GetTicksMsec());
+            menu.Hint.Text = $"in room \"{room}\" with {net.State.Peers.Count} other(s) · seed {seed}";
+            foreach (var p in net.State.Peers.Values) avatars.Add(p);
+            net.State.Joined += p =>
+            {
+                avatars.Add(p);
+                hud.Toast($"{p.Name.ToUpperInvariant()} ENTERED");
+            };
+            net.State.Left += p =>
+            {
+                avatars.Remove(p.Id);
+                hud.Toast($"{p.Name.ToUpperInvariant()} NOCLIPPED OUT");
+            };
+            net.Closed += () => hud.Toast("SIGNAL LOST");
+        }
+        else if (netError != "")
+        {
+            menu.Hint.Text = $"could not reach the relay ({netError})";
+            GetTree().CreateTimer(0.5).Timeout += () => hud.Toast("RELAY UNREACHABLE · ALONE");
+        }
         menu.Enter += () =>
         {
             Input.MouseMode = Input.MouseModeEnum.Captured;
@@ -194,6 +253,14 @@ public partial class Main : Node3D
     }
 
     const string SettingsPath = "user://settings.cfg";
+
+    static string LoadSetting(string key, string fallback)
+    {
+        var cfg = new ConfigFile();
+        return cfg.Load(SettingsPath) == Error.Ok ? cfg.GetValue("player", key, fallback).AsString() : fallback;
+    }
+
+    public override void _ExitTree() => net?.Dispose();
 
     static void SaveSetting(string key, string value)
     {
@@ -300,6 +367,19 @@ public partial class Main : Node3D
         }
         else hud.Waypoint.Text = "";
 
+        if (net != null)
+        {
+            double now = Time.GetTicksMsec();
+            if (net.State.Pose(now, m.X, m.Z, m.Yaw, m.Pitch, player.Last.Moving) is { } pose) net.Send(pose);
+            net.Poll(now);
+            net.State.Sample(now);
+            avatars.Update(net.State.Peers.Values, m.X, m.Z);
+            overlay.Others = net.State.Peers.Values.Where(p => p.Visible)
+                .Select(p => new MapOverlay.Other(p.X, p.Z, p.Yaw, Color.FromHtml(p.Color), p.Name)).ToList();
+            hud.Room.Text = net.Connected ? $"ROOM {room.ToUpperInvariant()} · {net.State.Peers.Count + 1}" : "SIGNAL LOST";
+        }
+        else hud.Room.Text = netError != "" ? "OFFLINE" : "";
+
         if (stats.Visible)
             stats.Text = $"{1000 / frameAvg:0} fps · scale {post.Scale:0.00} · chunks {chunks.Chunks.Count} · calls {Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0}"
                 + $" · tris {Performance.GetMonitor(Performance.Monitor.RenderTotalPrimitivesInFrame) / 1000:0.0}k · {m.X:0.0}, {m.Z:0.0}{(m.Noclip ? " · noclip" : "")}";
@@ -316,6 +396,12 @@ public partial class Main : Node3D
         {
             autoWalking = false;
             GD.Print($"autowalk: ended at ({m.X:0.00}, {m.Z:0.00}), inside a wall: {m.Collides(m.X, m.Z)}, chunks {chunks.Chunks.Count}");
+            if (net != null)
+                GD.Print($"net: room {room} seed {chunks.Gen.Seed} id {net.State.Id} connected {net.Connected}, peers: "
+                    + string.Join(", ", net.State.Peers.Values.Select(p => $"{p.Name} at ({p.X:0.00}, {p.Z:0.00}) visible {p.Visible} rendered {avatars.IsShown(p.Id)}")));
+            // free distances from here in 8 directions: the same numbers mean the same world (mixedtest.mjs)
+            var probe = Enumerable.Range(0, 8).Select(i => chunks.Gen.FreeDistance(m.X, m.Z, Math.Cos(i / 8.0 * Math.PI * 2), Math.Sin(i / 8.0 * Math.PI * 2), 40));
+            GD.Print(FormattableString.Invariant($"probe {m.X:R} {m.Z:R}: {string.Join(" ", probe.Select(d => d.ToString("R", CultureInfo.InvariantCulture)))}"));
             GetTree().Quit();
         }
     }
