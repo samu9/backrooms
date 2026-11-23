@@ -4,7 +4,7 @@
 shader_type spatial;
 render_mode unshaded, cull_back;
 
-uniform sampler2D occ : filter_linear, repeat_disable; // R wall, G ceiling height / 8, B chair rail
+uniform sampler2D occ_tex : filter_linear, repeat_disable; // R wall, G ceiling height / 8, B chair rail
 uniform vec2 chunk_origin;  // world x, z of the chunk corner
 uniform vec3 fog_color = vec3(0.25, 0.21, 0.09);
 uniform float fog_density = 0.022;
@@ -20,7 +20,7 @@ void vertex() {
 float wall_near(vec2 xz) {
 	// occupancy texel centres: the chunk's 64 cells start 16 texels in, 96 texels across
 	vec2 uv = ((xz - chunk_origin) / 0.5 + 16.0) / 96.0;
-	return texture(occ, uv).r;
+	return texture(occ_tex, uv).r;
 }
 
 void fragment() {

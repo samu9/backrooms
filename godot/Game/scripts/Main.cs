@@ -10,6 +10,8 @@ namespace Backrooms;
 ///   --view=K            spawn at the K-th long-sight-line viewpoint (same as the web's ?view=K)
 ///   --x= --z= --yaw= --pitch=   spawn position / direction
 ///   --radius=R          chunks kept around the player (default 2)
+///   --fog=D --q=0|1 --t=SECS   fog density, shadow quality, shader time at start (as the web's ?fog ?q ?t)
+///   --look=debug        the flat placeholder look instead of the level shader
 ///   --screenshot=PATH   build everything in range, render, save a PNG and quit
 ///   --autowalk=SECS     sprint forward for SECS, print where we ended up and quit (headless check)
 /// Keys: click to capture the mouse, WASD/arrows, Shift run, N noclip, P stats, F fullscreen, Esc release.
@@ -24,6 +26,8 @@ public partial class Main : Node3D
     string? screenshot;
     int screenshotFrames = -1;
     bool autoWalking;
+    double time;
+    bool frozenTime;
 
     public override void _Ready()
     {
@@ -42,13 +46,31 @@ public partial class Main : Node3D
         motion.Yaw = Num("yaw", motion.Yaw);
         motion.Pitch = Num("pitch", 0);
 
+        // the level shader's per-frame inputs (project.godot [shader_globals]), as the web's shared uniforms
+        RenderingServer.GlobalShaderParameterSet("br_seed", seed);
+        RenderingServer.GlobalShaderParameterSet("br_fog_color", new Vector3(FogColor.R, FogColor.G, FogColor.B));
+        RenderingServer.GlobalShaderParameterSet("br_fog_density", Num("fog", 0.022));
+        RenderingServer.GlobalShaderParameterSet("br_quality", Num("q", 1));
+        for (int i = 0; i < 4; i++) RenderingServer.GlobalShaderParameterSet($"br_ent{i}", Vector4.Zero);
+        time = Num("t", 0);
+        frozenTime = args.ContainsKey("screenshot"); // like the web's ?shot: a still frame at time t
+        RenderingServer.GlobalShaderParameterSet("br_time", time % 4096);
+
+        // the shaders output linear HDR; tone mapping here until the camcorder post is ported (M5).
+        // The background colour is linear in the web (fog * 0.4); Godot's is sRGB.
         AddChild(new WorldEnvironment
         {
-            Environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = FogColor * 0.4f },
+            Environment = new Godot.Environment
+            {
+                BackgroundMode = Godot.Environment.BGMode.Color,
+                BackgroundColor = (FogColor * 0.4f).LinearToSrgb(),
+                TonemapMode = Godot.Environment.ToneMapper.Aces,
+            },
         });
 
+        var look = args.GetValueOrDefault("look", "level");
         chunks = new ChunkManager { Name = "Chunks", Radius = (int)Num("radius", 2) };
-        chunks.Init(gen, GD.Load<Shader>("res://shaders/level_debug.gdshader"));
+        chunks.Init(gen, GD.Load<Shader>(look == "debug" ? "res://shaders/level_debug.gdshader" : "res://shaders/level.gdshader"));
         AddChild(chunks);
 
         player = new PlayerNode { Name = "Player" };
@@ -65,6 +87,7 @@ public partial class Main : Node3D
         {
             screenshot = path;
             screenshotFrames = 3;
+            player.Frozen = true;
             stats.Visible = args.ContainsKey("stats");
         }
         if (args.TryGetValue("autowalk", out var secs))
@@ -98,6 +121,8 @@ public partial class Main : Node3D
     public override void _Process(double delta)
     {
         var m = player.Motion;
+        if (!frozenTime) time += Math.Clamp(delta, 0, 0.1);
+        RenderingServer.GlobalShaderParameterSet("br_time", time % 4096);
         chunks.UpdateAround(m.X, m.Z);
 
         if (stats.Visible)

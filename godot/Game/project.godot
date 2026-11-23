@@ -17,3 +17,42 @@ project/assembly_name="Backrooms"
 [rendering]
 
 renderer/rendering_method="forward_plus"
+
+[shader_globals]
+
+br_time={
+"type": "float",
+"value": 0.0
+}
+br_seed={
+"type": "int",
+"value": 1
+}
+br_fog_color={
+"type": "vec3",
+"value": Vector3(0.62, 0.55, 0.34)
+}
+br_fog_density={
+"type": "float",
+"value": 0.022
+}
+br_quality={
+"type": "float",
+"value": 1.0
+}
+br_ent0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+br_ent1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+br_ent2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+br_ent3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}

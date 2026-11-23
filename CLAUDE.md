@@ -26,8 +26,12 @@ the same world, cell for cell.
 
 - Any change to `shared/gen.ts` is mirrored in `godot/Core/Gen.cs` in the same commit, then
   `npm run gen:fixtures && npm run godot:test`. Commit the regenerated fixture.
-- `hash3` is also mirrored in GLSL (`web/src/shaders.ts`), and will be in the Godot shaders. Change
-  them together.
+- `hash3` is also mirrored in GLSL (`web/src/shaders.ts`) and in the Godot shader
+  (`godot/Game/shaders/level.gdshaderinc`). Change all three together.
+- `level.gdshaderinc` is a line-by-line port of the web level/prop shader: a change to the look in
+  `web/src/shaders.ts` goes there too. Per-frame values are project shader globals (`br_*`,
+  declared in `project.godot` `[shader_globals]`, set from `Main.cs`); per-chunk ones are material
+  parameters set in `ChunkManager.cs`. Compare with `--screenshot` against the web's `shot.mjs`.
 - The porting rules are at the top of `Gen.cs`: wrapping int/uint for `Math.imul` and `>>>`,
   doubles in the same operation order, `Math.Floor` (never casts) for negatives, `Gen.JsRound`
   for `Math.round`.
