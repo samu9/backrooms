@@ -1,6 +1,7 @@
 // A web player and a Godot player in one room, through the real relay. The browser stands still,
 // the Godot client (headless) sprints for a few seconds; each must see the other, in the same
-// world (same seed), and the browser must see the Godot player move.
+// world (same seed), and the browser must see the Godot player move. Then the browser starts a
+// hunt, and both must agree on the phase and the roles.
 //   npm run build && PORT=5190 npm run server &
 //   GODOT=/path/to/godot node web/scripts/mixedtest.mjs [baseUrl]
 import { chromium } from 'playwright';
@@ -38,6 +39,10 @@ await page.waitForFunction(() => [...window.__game.net.peers.values()].some((p) 
 const first = await page.evaluate(() => [...window.__game.net.peers.values()].find((p) => p.name === 'godotty'));
 await page.waitForTimeout(2500);
 const later = await page.evaluate(() => [...window.__game.net.peers.values()].find((p) => p.name === 'godotty'));
+// the browser starts a hunt: both must agree on the phase and on who the entity is
+await page.evaluate(() => window.__game.hunt.requestStart());
+await page.waitForTimeout(1000);
+const webHunt = await page.evaluate(() => ({ phase: window.__game.hunt.phase, me: window.__game.net.id, roles: [...window.__game.hunt.roles.entries()] }));
 const code = await new Promise((r) => g.on('exit', r));
 const log = out.join('');
 const netLine = log.split('\n').find((l) => l.startsWith('net:')) ?? '';
@@ -56,6 +61,11 @@ if (probe) {
   const webD = await page.evaluate(([x, z]) => Array.from({ length: 8 }, (_, i) => window.__game.freeDistance(x, z, Math.cos((i / 8) * Math.PI * 2), Math.sin((i / 8) * Math.PI * 2), 40)), [x, z]);
   check(JSON.stringify(godotD) === JSON.stringify(webD), `same world from (${x}, ${z}): godot ${godotD.join(' ')} / web ${webD.join(' ')}`);
 }
+const hl = /hunt: phase (\S+) role (\S+) roles (\S*)/.exec(log);
+const godotRoles = Object.fromEntries((hl?.[3] ?? '').split(',').filter(Boolean).map((kv) => kv.split('=')).map(([k, v]) => [Number(k), v]));
+check(webHunt.phase === 'countdown' && hl?.[1] === 'countdown', `a hunt started on both (web ${webHunt.phase}, godot ${hl?.[1]})`);
+check(webHunt.roles.length === 2 && webHunt.roles.every(([id, r]) => godotRoles[id] === r), `same roles on both: web ${JSON.stringify(webHunt.roles)} / godot ${hl?.[3]}`);
+check(webHunt.roles.filter(([, r]) => r === 'entity').length === 1, 'exactly one entity');
 await page.waitForTimeout(1500);
 check(/· 1$/.test((await page.textContent('#room')) ?? ''), `the browser saw Godot leave (${label} -> ${await page.textContent('#room')})`);
 check(errs.length === 0, 'no page errors ' + errs.join('; '));

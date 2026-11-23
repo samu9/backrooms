@@ -482,6 +482,7 @@ public partial class Main : Node3D
         {
             autoWalking = false;
             if (net is LocalSession sol) GD.Print($"solo: phase {Names.Of(hunt.Phase)}, role {Names.Of(hunt.MyRole)}, entity {sol.Ai.State} at ({sol.Ai.X:0.0}, {sol.Ai.Z:0.0})");
+            if (net != null) GD.Print($"hunt: phase {Names.Of(hunt.Phase)} role {Names.Of(hunt.MyRole)} roles {string.Join(",", hunt.Roles.Select(r => $"{r.Key}={Names.Of(r.Value)}"))}");
             GD.Print($"autowalk: ended at ({m.X:0.00}, {m.Z:0.00}), inside a wall: {m.Collides(m.X, m.Z)}, chunks {chunks.Chunks.Count}");
             if (net != null)
                 GD.Print($"net: room {room} seed {chunks.Gen.Seed} id {net.State.Id} connected {net.Connected}, peers: "
