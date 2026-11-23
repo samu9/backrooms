@@ -49,6 +49,16 @@ public sealed class NetState
 
     public void Begin(string room) => Room = room;
 
+    /// <summary>For an in-process relay (single player): who we are, and peers that aren't on the network.</summary>
+    public void SetId(int id) => Id = id;
+
+    public Peer AddPeer(int id, string name, string color)
+    {
+        var p = new Peer(id, name, color);
+        Peers[id] = p;
+        return p;
+    }
+
     /// <summary>A pose message, or null when the last one went out less than 66 ms ago.</summary>
     public string? Pose(double nowMs, double x, double z, double yaw, double pitch, double v, int f = 0)
     {
