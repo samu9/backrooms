@@ -4,12 +4,3 @@
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
-
-[node name="UI" type="CanvasLayer" parent="."]
-
-[node name="Info" type="Label" parent="UI"]
-offset_left = 16.0
-offset_top = 16.0
-offset_right = 600.0
-offset_bottom = 48.0
-text = "The Backrooms"

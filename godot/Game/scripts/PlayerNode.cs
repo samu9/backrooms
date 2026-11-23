@@ -18,6 +18,8 @@ public partial class PlayerNode : Node3D
     public double AutoWalk;
     /// <summary>A still frame: no time passes (screenshots, like the web's ?shot).</summary>
     public bool Frozen;
+    /// <summary>Off while the menu or the full map has the keyboard.</summary>
+    public bool InputEnabled = true;
 
     public void Init(PlayerMotion motion)
     {
@@ -32,8 +34,6 @@ public partial class PlayerNode : Node3D
     {
         if (e is InputEventMouseMotion mm && Input.MouseMode == Input.MouseModeEnum.Captured)
             Motion.Look(mm.Relative.X, mm.Relative.Y);
-        else if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } && Input.MouseMode != Input.MouseModeEnum.Captured)
-            Input.MouseMode = Input.MouseModeEnum.Captured;
         else if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.PhysicalKeycode == Key.N) Motion.Noclip = !Motion.Noclip;
@@ -48,11 +48,15 @@ public partial class PlayerNode : Node3D
         double dt = Frozen ? 0 : Math.Clamp(delta, 0, 0.1);
         Time += dt;
         int ix = 0, iz = 0;
-        if (Down(Key.W, Key.Up)) iz -= 1;
-        if (Down(Key.S, Key.Down)) iz += 1;
-        if (Down(Key.A, Key.Left)) ix -= 1;
-        if (Down(Key.D, Key.Right)) ix += 1;
-        bool run = Input.IsPhysicalKeyPressed(Key.Shift);
+        bool run = false;
+        if (InputEnabled)
+        {
+            if (Down(Key.W, Key.Up)) iz -= 1;
+            if (Down(Key.S, Key.Down)) iz += 1;
+            if (Down(Key.A, Key.Left)) ix -= 1;
+            if (Down(Key.D, Key.Right)) ix += 1;
+            run = Input.IsPhysicalKeyPressed(Key.Shift);
+        }
         if (AutoWalk > 0)
         {
             AutoWalk -= dt;

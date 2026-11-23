@@ -1,5 +1,6 @@
 using System.Globalization;
 using Backrooms.Core;
+using Backrooms.UI;
 using Godot;
 
 namespace Backrooms;
@@ -16,7 +17,10 @@ namespace Backrooms;
 ///   --prop=K [--pname=NAME]   stand next to the K-th prop near the spawn (the web's ?prop=K&pname=)
 ///   --screenshot=PATH   build everything in range, render, save a PNG and quit
 ///   --autowalk=SECS     sprint forward for SECS, print where we ended up and quit (headless check)
-/// Keys: click to capture the mouse, WASD/arrows, Shift run, N noclip, V camcorder, P stats, F fullscreen, Esc release.
+/// Keys: click the menu to go in, WASD/arrows, Shift run, N noclip, V camcorder, H overlay, Tab minimap, [ ] zoom,
+/// M full map (C centre), P stats, F fullscreen, Esc menu.
+///   --osd=1 --map=1      keep the OSD / minimap in screenshots (the web's ?osd=1 &map=1)
+///   --menu=1 --fullmap=1 --mark=X,Z;X,Z   screenshots of the menu / the full map / with marks
 /// </summary>
 public partial class Main : Node3D
 {
@@ -31,6 +35,11 @@ public partial class Main : Node3D
     double time;
     bool frozenTime;
     Post post = null!;
+    Hud hud = null!;
+    Menu menu = null!;
+    MapData map = null!;
+    readonly MapOverlay overlay = new();
+    bool started, shot, showMenuInShot;
     bool fixedScale;
     double frameAvg = 16, statT;
 
@@ -93,8 +102,26 @@ public partial class Main : Node3D
         world.AddChild(player);
         player.Init(motion);
 
-        stats = GetNode<Label>("UI/Info");
-        stats.Visible = false;
+        // overlay: OSD, minimap, full map, toasts, menu (web/index.html)
+        map = new MapData(gen);
+        var mapTex = new MapTextures(map);
+        hud = new Hud { Name = "Hud" };
+        AddChild(hud);
+        hud.Init(mapTex, overlay);
+        stats = hud.Stats;
+        map.Reached += m => hud.Toast($"MARK {m.Id} REACHED");
+        menu = new Menu { Name = "Menu" };
+        var menuLayer = new CanvasLayer { Name = "MenuLayer", Layer = 2 };
+        menuLayer.AddChild(menu);
+        AddChild(menuLayer);
+        menu.Init(args.GetValueOrDefault("room", ""), PlayerName(args));
+        menu.Enter += () =>
+        {
+            Input.MouseMode = Input.MouseModeEnum.Captured;
+            started = true;
+        };
+        menu.Join += (r, n) => Relaunch(new() { ["room"] = r, ["name"] = n });
+        menu.Solo += d => Relaunch(new() { ["solo"] = d });
 
         chunks.BuildAllNow(motion.X, motion.Z);
         if (args.TryGetValue("prop", out var propK))
@@ -110,7 +137,20 @@ public partial class Main : Node3D
             screenshotFrames = 15; // the bloom chain settles over a few frames
             player.Frozen = true;
             stats.Visible = args.ContainsKey("stats");
+            // a clean frame, like the web's ?shot: no menu, OSD or minimap unless asked for
+            shot = true;
+            hud.Osd.Visible = args.GetValueOrDefault("osd") == "1";
+            hud.Minimap.GetParent<Control>().Visible = args.GetValueOrDefault("map") == "1";
+            map.Reveal(motion.X, motion.Z, 0, force: true);
+            showMenuInShot = args.GetValueOrDefault("menu") == "1";
+            foreach (var mk in args.GetValueOrDefault("mark", "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var xz = mk.Split(',');
+                map.AddMarker(double.Parse(xz[0], CultureInfo.InvariantCulture), double.Parse(xz[1], CultureInfo.InvariantCulture));
+            }
+            if (args.GetValueOrDefault("fullmap") == "1") hud.FullMap.Show(motion.X, motion.Z);
         }
+        if (args.GetValueOrDefault("hud") == "0") shot = true;
         if (args.TryGetValue("autowalk", out var secs))
         {
             player.AutoWalk = double.Parse(secs, CultureInfo.InvariantCulture);
@@ -142,8 +182,38 @@ public partial class Main : Node3D
         }
     }
 
+    /// <summary>Options from the command line, replaced by the menu's choice after a relaunch.</summary>
+    static Dictionary<string, string>? relaunch;
+
+    /// <summary>Joining a room or playing alone starts over in a new world, as the web reloads the page.</summary>
+    void Relaunch(Dictionary<string, string> opts)
+    {
+        if (opts.TryGetValue("name", out var n) && n != "") SaveSetting("name", n);
+        relaunch = opts;
+        GetTree().ReloadCurrentScene();
+    }
+
+    const string SettingsPath = "user://settings.cfg";
+
+    static void SaveSetting(string key, string value)
+    {
+        var cfg = new ConfigFile();
+        cfg.Load(SettingsPath);
+        cfg.SetValue("player", key, value);
+        cfg.Save(SettingsPath);
+    }
+
+    static string PlayerName(Dictionary<string, string> args)
+    {
+        if (args.TryGetValue("name", out var n) && n != "") return n[..Math.Min(20, n.Length)];
+        var cfg = new ConfigFile();
+        if (cfg.Load(SettingsPath) == Error.Ok && cfg.GetValue("player", "name", "").AsString() is { Length: > 0 } saved) return saved;
+        return $"wanderer-{GD.Randi() % 900 + 100}";
+    }
+
     static Dictionary<string, string> ParseArgs()
     {
+        if (relaunch != null) return relaunch;
         var d = new Dictionary<string, string>();
         foreach (var a in OS.GetCmdlineUserArgs())
         {
@@ -160,15 +230,44 @@ public partial class Main : Node3D
         // the player lives inside the scene SubViewport, which gets no input events of its own
         player.HandleInput(e);
         if (e is not InputEventKey { Pressed: true, Echo: false } k) return;
+        var fm = hud.FullMap;
+        var mini = hud.Minimap.GetParent<Control>();
+        switch (k.PhysicalKeycode)
+        {
+            case Key.H: hud.Osd.Visible = !hud.Osd.Visible; break;
+            case Key.Tab: mini.Visible = !mini.Visible; break;
+            case Key.Bracketleft: hud.Minimap.MapScale = Math.Max(1.5f, hud.Minimap.MapScale / 1.4f); break;
+            case Key.Bracketright: hud.Minimap.MapScale = Math.Min(14, hud.Minimap.MapScale * 1.4f); break;
+            case Key.M when started:
+                if (fm.Open) CloseFullMap(true);
+                else
+                {
+                    fm.Show(player.Motion.X, player.Motion.Z);
+                    Input.MouseMode = Input.MouseModeEnum.Visible;
+                }
+                break;
+            case Key.C when fm.Open: fm.Center(player.Motion.X, player.Motion.Z); break;
+            case Key.Escape when fm.Open: CloseFullMap(false); break;
+        }
         if (k.PhysicalKeycode == Key.P) stats.Visible = !stats.Visible;
         if (k.PhysicalKeycode == Key.V) post.Set("vhs", post.Get("vhs") > 0.5f ? 0 : 1);
         if (k.PhysicalKeycode == Key.F)
             DisplayServer.WindowSetMode(DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Fullscreen ? DisplayServer.WindowMode.Windowed : DisplayServer.WindowMode.Fullscreen);
     }
 
+    void CloseFullMap(bool resume)
+    {
+        hud.FullMap.Hide();
+        Input.MouseMode = resume ? Input.MouseModeEnum.Captured : Input.MouseModeEnum.Visible;
+    }
+
     public override void _Process(double delta)
     {
         var m = player.Motion;
+        // the menu shows whenever the mouse is free and the map isn't open (pointer lock on the web)
+        bool captured = Input.MouseMode == Input.MouseModeEnum.Captured;
+        menu.Visible = (!shot || showMenuInShot) && !captured && !hud.FullMap.Open;
+        player.InputEnabled = captured && !hud.FullMap.Open;
         if (!frozenTime) time += Math.Clamp(delta, 0, 0.1);
         RenderingServer.GlobalShaderParameterSet("br_time", time % 4096);
         post.Set("time", (float)time);
@@ -186,6 +285,20 @@ public partial class Main : Node3D
                 post.Resize();
             }
         }
+
+        double dtc = Math.Clamp(delta, 0, 0.1);
+        map.Reveal(m.X, m.Z, dtc, shot);
+        map.CheckReached(m.X, m.Z);
+        hud.Tick(time, dtc);
+        if (hud.Minimap.IsVisibleInTree()) hud.Minimap.Refresh(m.X, m.Z, m.Yaw);
+        hud.FullMap.Refresh(m.X, m.Z, m.Yaw, dtc);
+        if (map.Target is { } tgt)
+        {
+            double d = Math.Sqrt((tgt.X - m.X) * (tgt.X - m.X) + (tgt.Z - m.Z) * (tgt.Z - m.Z));
+            hud.Waypoint.Text = $"◆ MARK {tgt.Id} · {(d < 1000 ? $"{d:0} M" : $"{d / 1000:0.0} KM")}";
+            hud.Waypoint.LabelSettings.FontColor = Color.FromHtml(tgt.Color);
+        }
+        else hud.Waypoint.Text = "";
 
         if (stats.Visible)
             stats.Text = $"{1000 / frameAvg:0} fps · scale {post.Scale:0.00} · chunks {chunks.Chunks.Count} · calls {Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0}"
