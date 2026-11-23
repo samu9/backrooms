@@ -12,6 +12,7 @@ namespace Backrooms;
 ///   --radius=R          chunks kept around the player (default 2)
 ///   --fog=D --q=0|1 --t=SECS   fog density, shadow quality, shader time at start (as the web's ?fog ?q ?t)
 ///   --look=debug        the flat placeholder look instead of the level shader
+///   --prop=K [--pname=NAME]   stand next to the K-th prop near the spawn (the web's ?prop=K&pname=)
 ///   --screenshot=PATH   build everything in range, render, save a PNG and quit
 ///   --autowalk=SECS     sprint forward for SECS, print where we ended up and quit (headless check)
 /// Keys: click to capture the mouse, WASD/arrows, Shift run, N noclip, P stats, F fullscreen, Esc release.
@@ -70,7 +71,8 @@ public partial class Main : Node3D
 
         var look = args.GetValueOrDefault("look", "level");
         chunks = new ChunkManager { Name = "Chunks", Radius = (int)Num("radius", 2) };
-        chunks.Init(gen, GD.Load<Shader>(look == "debug" ? "res://shaders/level_debug.gdshader" : "res://shaders/level.gdshader"));
+        chunks.Init(gen, GD.Load<Shader>(look == "debug" ? "res://shaders/level_debug.gdshader" : "res://shaders/level.gdshader"),
+            look == "debug" ? null : GD.Load<Shader>("res://shaders/prop.gdshader"));
         AddChild(chunks);
 
         player = new PlayerNode { Name = "Player" };
@@ -81,6 +83,11 @@ public partial class Main : Node3D
         stats.Visible = false;
 
         chunks.BuildAllNow(motion.X, motion.Z);
+        if (args.TryGetValue("prop", out var propK))
+        {
+            StandByProp(motion, int.Parse(propK, CultureInfo.InvariantCulture), args.GetValueOrDefault("pname"));
+            chunks.BuildAllNow(motion.X, motion.Z);
+        }
         GD.Print($"seed {seed}: spawn ({motion.X:0.##}, {motion.Z:0.##}) yaw {motion.Yaw:0.###}, {chunks.Chunks.Count} chunks, zone {gen.ZoneAt((int)Math.Floor(motion.X / Gen.Cell), (int)Math.Floor(motion.Z / Gen.Cell)).Type}");
 
         if (args.TryGetValue("screenshot", out var path))
@@ -94,6 +101,30 @@ public partial class Main : Node3D
         {
             player.AutoWalk = double.Parse(secs, CultureInfo.InvariantCulture);
             autoWalking = true;
+        }
+    }
+
+    /// <summary>Debug view (the web's ?prop=K&pname=): stand a few metres from the K-th prop around the spawn.</summary>
+    void StandByProp(PlayerMotion m, int k, string? name)
+    {
+        var gen = chunks.Gen;
+        var all = chunks.AllPropSpots().Where(p => string.IsNullOrEmpty(name) || p.Name == name)
+            .OrderBy(p => p.X).ThenBy(p => p.Z).ToList();
+        for (int i = 0; i < all.Count; i++)
+        {
+            var p = all[(k + i) % all.Count];
+            for (int a = 0; a < 16; a++)
+            {
+                double t = a / 16.0 * Math.PI * 2;
+                foreach (double d in new[] { 1.7, 2.2, 2.8 })
+                {
+                    double x = p.X + Math.Cos(t) * d, z = p.Z + Math.Sin(t) * d;
+                    if (m.Collides(x, z)) continue;
+                    if (gen.FreeDistance(x, z, -Math.Cos(t), -Math.Sin(t), d) < d - 0.9) continue;
+                    (m.X, m.Z, m.Yaw, m.Pitch) = (x, z, Math.Atan2(Math.Cos(t), Math.Sin(t)), -0.32);
+                    return;
+                }
+            }
         }
     }
 

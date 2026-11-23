@@ -26,13 +26,18 @@ public partial class ChunkManager : Node3D
     readonly Dictionary<(int, int), Task<ChunkData>> pending = [];
     readonly int maxInFlight = Math.Max(1, System.Environment.ProcessorCount - 1);
     Gen gen = null!;
+    public Gen Gen => gen;
     Shader shader = null!;
+    Shader? propShader;
 
-    public void Init(Gen g, Shader levelShader)
+    public void Init(Gen g, Shader levelShader, Shader? props)
     {
         gen = g;
         shader = levelShader;
+        propShader = props;
     }
+
+    public IEnumerable<PropSpot> AllPropSpots() => Chunks.Values.SelectMany(c => c.Data.PropSpots);
 
     static (int, int) ChunkAt(double x, double z) => ((int)Math.Floor(x / Gen.Chunk), (int)Math.Floor(z / Gen.Chunk));
 
@@ -106,11 +111,16 @@ public partial class ChunkManager : Node3D
     {
         var occ = ImageTexture.CreateFromImage(Image.CreateFromData(Gen.Tex, Gen.Tex, false, Image.Format.Rgba8, c.Occupancy));
         var lights = ImageTexture.CreateFromImage(Image.CreateFromData(ChunkData.LightTex, ChunkData.LightTex, false, Image.Format.Rgba8, c.Lights));
-        var mat = new ShaderMaterial { Shader = shader };
-        mat.SetShaderParameter("occ_tex", occ);
-        mat.SetShaderParameter("lights_tex", lights);
-        mat.SetShaderParameter("chunk_origin", new Vector2((float)c.OriginX, (float)c.OriginZ));
-        mat.SetShaderParameter("light_base", new Vector2(c.LightBaseI, c.LightBaseJ));
+        ShaderMaterial Material(Shader sh)
+        {
+            var m = new ShaderMaterial { Shader = sh };
+            m.SetShaderParameter("occ_tex", occ);
+            m.SetShaderParameter("lights_tex", lights);
+            m.SetShaderParameter("chunk_origin", new Vector2((float)c.OriginX, (float)c.OriginZ));
+            m.SetShaderParameter("light_base", new Vector2(c.LightBaseI, c.LightBaseJ));
+            return m;
+        }
+        var mat = Material(shader);
         var node = new MeshInstance3D
         {
             Name = $"chunk {c.Ci},{c.Cj}",
@@ -119,6 +129,17 @@ public partial class ChunkManager : Node3D
             Position = new Vector3((float)c.OriginX, 0, (float)c.OriginZ),
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         };
+        if (propShader != null && c.Props.VertexCount > 0)
+        {
+            // a second draw call per chunk, lit with the same textures
+            node.AddChild(new MeshInstance3D
+            {
+                Name = "props",
+                Mesh = ToMesh(c.Props),
+                MaterialOverride = Material(propShader),
+                CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            });
+        }
         AddChild(node);
         return new Loaded { Data = c, Node = node, Occupancy = occ, Lights = lights };
     }
