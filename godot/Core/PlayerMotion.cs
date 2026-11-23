@@ -1,7 +1,7 @@
 // First-person movement and camera feel, ported from step() in web/src/main.ts: momentum, a sprint
 // that builds up, sub-stepped collision against the occupancy grid that slides along walls, head
 // bob, handheld sway, strafe lean and FOV widening. No engine types: Game/PlayerNode feeds it input
-// and applies the CameraPose. Hunt-only parts (stamina gate, entity speed, phasing) come with M8.
+// and applies the CameraPose. The hunt plugs in through SprintGate, FixedSpeed and Ghost.
 namespace Backrooms.Core;
 
 /// <summary>Camera position (metres) and rotation (radians, YXZ order), vertical FOV in degrees.</summary>
@@ -22,6 +22,14 @@ public sealed class PlayerMotion(Gen gen)
     public double BaseFov = 66;
     public double X, Z, Yaw, Pitch, Vx, Vz, Bob, Sprint;
     public bool Noclip;
+
+    // the hunt's say in how you move (web main.ts step(): hunt.sprintGate, ENTITY_SPEED, phasing)
+    /// <summary>(want to run, current speed, dt) -> may run. Drains stamina as a side effect.</summary>
+    public Func<bool, double, double, bool>? SprintGate;
+    /// <summary>A fixed speed (the entity's), or null.</summary>
+    public Func<double?>? FixedSpeed;
+    /// <summary>Walk through walls (phasing).</summary>
+    public Func<bool>? Ghost;
 
     public bool Collides(double x, double z)
     {
@@ -53,9 +61,10 @@ public sealed class PlayerMotion(Gen gen)
         bool input = ix != 0 || iz != 0;
         // sprint builds up over ~half a second and dies off faster; only really works going forward
         bool wantRun = input && iz <= 0 && runHeld;
+        if (SprintGate != null) wantRun = SprintGate(wantRun, Math.Sqrt(Vx * Vx + Vz * Vz), dt);
         Sprint += ((wantRun ? 1 : 0) - Sprint) * (1 - Math.Exp(-dt * (wantRun ? 2.6 : 5)));
-        bool ghost = Noclip;
-        double speed = Noclip ? NoclipSpeed : Walk + (Run - Walk) * Sprint;
+        bool ghost = Noclip || (Ghost?.Invoke() ?? false);
+        double speed = Noclip ? NoclipSpeed : FixedSpeed?.Invoke() ?? Walk + (Run - Walk) * Sprint;
         if (iz > 0) speed *= 0.65; // backpedalling
         else if (iz == 0 && ix != 0) speed *= 0.85; // pure strafe
         double il = Math.Sqrt(ix * ix + iz * iz);
