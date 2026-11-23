@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- The Backrooms: yellow wallpaper, a buzzing panel, a doorway into the dark -->
+  <defs>
+    <pattern id="paper" width="21" height="256" patternUnits="userSpaceOnUse">
+      <rect width="21" height="256" fill="#cdbf70"/>
+      <rect x="20" width="1" height="256" fill="#b3a55c"/>
+    </pattern>
+    <radialGradient id="dark" cx="0.5" cy="0.35" r="0.8">
+      <stop offset="0" stop-color="#3a3212"/>
+      <stop offset="1" stop-color="#0d0b06"/>
+    </radialGradient>
+  </defs>
+  <rect width="256" height="256" rx="36" fill="url(#paper)"/>
+  <rect x="0" y="196" width="256" height="60" rx="0" fill="#a8995a"/>
+  <rect x="44" y="18" width="168" height="26" rx="3" fill="#fffbe8"/>
+  <rect x="44" y="18" width="168" height="26" rx="3" fill="none" stroke="#d8d2b8" stroke-width="3"/>
+  <rect x="92" y="78" width="72" height="128" fill="url(#dark)"/>
+  <rect x="86" y="72" width="84" height="134" fill="none" stroke="#e9e3c9" stroke-width="8"/>
+  <rect x="0" y="0" width="256" height="256" rx="36" fill="none" stroke="#7a6d33" stroke-width="6"/>
+</svg>
